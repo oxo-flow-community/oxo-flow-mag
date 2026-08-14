@@ -1,0 +1,9 @@
+---
+# Environment for ale — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/ale 20180904 module environment (modules/nf-core/ale/main/environment.yml).
+name: ale
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::ale=20180904

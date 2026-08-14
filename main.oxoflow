@@ -1,0 +1,119 @@
+# oxo-flow port of nf-core/mag 5.5.0 (default-parameters main path).
+#
+# Upstream: https://github.com/nf-core/mag @ 5.5.0
+#   (sha 56abab5b023ce953c9c43fe21090d156ad0e18af)
+# Default path: FastQC(raw) -> fastp -> phiX removal (bowtie2) ->
+#   FastQC(trimmed) -> [SPAdes + MEGAHIT assembly] -> gunzip ->
+#   QUAST + PRODIGAL -> bowtie2 binning preparation -> binning
+#   (MetaBAT2, MaxBin2, CONCOCT, COMEBin, MetaBinner, SemiBin2) ->
+#   depths -> BUSCO bin QC -> QUAST bins -> GTDB-Tk classification ->
+#   bin summary -> PROKKA annotation -> ALE -> MultiQC.
+#
+# Fidelity notes (see README for the full table):
+# - Commands mirror the upstream module scripts byte-for-byte under default
+#   params; upstream process labels/overrides are baked into
+#   [rules.resources].
+# - oxo-flow has no {assembler} wildcard: every per-assembler process is
+#   emitted as one rule per assembler with the assembler hard-coded in the
+#   rule name and file paths (rule name suffix _megahit / _spades).
+# - The upstream binning_map_mode='group' behavior is replicated: every
+#   assembly is aligned against every sample's reads in the cohort
+#   (bowtie2_align_* loops over the group's read sets).
+# - Rules whose tools write generic-named files into the working directory
+#   (spades, megahit, busco, gtdbtk, metabinner, semibin, ...) run inside a
+#   per-rule scratch subdir and move named outputs out afterwards, because
+#   oxo-flow executes every rule in one shared working directory (upstream
+#   Nextflow gives every task its own directory).
+# - MultiQC input collection mirrors the upstream channel mix; the
+#   nf-core boilerplate inputs (workflow_summary_mqc.yaml,
+#   methods_description_mqc.yaml, versions.yml) are not ported.
+
+[workflow]
+name = "oxo-flow-mag"
+version = "1.0.0"
+description = "Metagenome assembly and binning: FastQC, fastp, phiX removal, SPAdes/MEGAHIT assembly, QUAST, PRODIGAL, bowtie2 mapping, binning (MetaBAT2/MaxBin2/CONCOCT/COMEBin/MetaBinner/SemiBin2), depths, BUSCO QC, GTDB-Tk classification, bin summary, PROKKA annotation, ALE, MultiQC"
+author = "oxo-flow-community"
+sample_group_name = "cohort"
+
+[config]
+# Input directory containing {sample}_R1.fastq.gz / {sample}_R2.fastq.gz
+# paired-end read files (upstream --input samplesheet; single-end and
+# multi-library lanes are not ported). The repo default ships tiny test
+# fixtures; point this at your data.
+input_dir = "test/fixtures/raw"
+out_dir = "results"
+# phiX reference (upstream --phix_reference default =
+# projectDir/assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz)
+phix_reference = "assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz"
+# GTDB-Tk database: URL of the .tar.gz release or a local directory
+# (upstream --gtdb_db default). gtdbtk_db_preparation unpacks .tar.gz.
+gtdb_db = "https://data.gtdb.aau.ecogenomic.org/releases/release232/232.0/auxillary_files/gtdbtk_package/full_package/gtdbtk_r232_data.tar.gz"
+# fastp clipping (upstream params with the same defaults)
+reads_minlength = 15
+fastp_qualified_quality = 15
+fastp_cut_mean_quality = 15
+fastp_trim_polyg = false
+# Bin size filtering (upstream --bin_min_size / --bin_max_size; defaults
+# 0/null make the seqkit-based filter a no-op)
+bin_min_size = 0
+bin_max_size = ""
+min_contig_size = 1500
+min_length_unbinned_contigs = 1000000
+max_unbinned_contigs = 100
+# Binning options (upstream params with the same defaults)
+bin_concoct_chunksize = 10000
+bin_concoct_overlap = 0
+bin_concoct_donotconcatlast = false
+bin_metabinner_scale = "large"
+semibin_rng_seed = 1
+semibin_environment = "global"
+metabat_rng_seed = 1
+shortread_percentidentity = ""
+# GTDB-Tk (upstream params with the same defaults)
+gtdbtk_min_completeness = 50.0
+gtdbtk_max_contamination = 10.0
+gtdbtk_min_perc_aa = 10
+gtdbtk_min_af = 0.65
+gtdbtk_pplacer_cpus = 1
+gtdbtk_use_full_tree = false
+gtdbtk_place_species = false
+# PROKKA (upstream params with the same defaults)
+prokka_with_compliance = false
+prokka_fast_mode = false
+# ALE (upstream --ale_per_base_output default false -> --metagenome --nout)
+ale_per_base_output = false
+# Space-separated list of sample ids used by the binning-preparation
+# bowtie2 alignment rules (binning_map_mode='group': every assembly is
+# aligned against every sample's reads). Keep in sync with the sample
+# group below.
+cohort_samples = "S1 S2"
+
+[[sample_groups]]
+name = "cohort"
+samples = ["S1", "S2"]
+
+[defaults]
+threads = 1
+memory = "6G"
+
+# ---------------------------------------------------------------------------
+# Rule fragments (one upstream process per rule; per-assembler processes are
+# hard-coded per assembler, see README fidelity table).
+# ---------------------------------------------------------------------------
+[[include]]
+path = "modules/01_preprocessing.oxoflow"
+
+[[include]]
+path = "modules/02_assembly.oxoflow"
+
+[[include]]
+path = "modules/03_binning_prep.oxoflow"
+
+[[include]]
+path = "modules/04_binning.oxoflow"
+
+[[include]]
+path = "modules/05_binqc.oxoflow"
+
+[[include]]
+path = "modules/06_taxonomy.oxoflow"

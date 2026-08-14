@@ -1,0 +1,11 @@
+---
+# Environment for prokka — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/prokka 1.15.6 module environment (modules/nf-core/prokka/main/environment.yml).
+name: prokka
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::prokka=1.15.6
+  - bioconda::openjdk=8.0.472
+  - bioconda::parallel=20241122

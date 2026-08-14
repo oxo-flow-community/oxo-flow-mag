@@ -1,0 +1,10 @@
+---
+# Environment for megahit — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/megahit 1.2.9 module environment (modules/nf-core/megahit/main/environment.yml).
+name: megahit
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::megahit=1.2.9
+  - bioconda::pigz=2.8

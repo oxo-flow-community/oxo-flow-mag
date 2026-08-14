@@ -1,0 +1,10 @@
+---
+# Environment for semibin — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/semibin 2.2.0 module environment (modules/nf-core/semibin/main/environment.yml).
+name: semibin
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::semibin=2.2.0
+  - bioconda::igraph=0.10.17

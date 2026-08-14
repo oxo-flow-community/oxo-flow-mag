@@ -1,0 +1,10 @@
+---
+# Environment for prodigal — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/prodigal 2.6.3 module environment (modules/nf-core/prodigal/main/environment.yml).
+name: prodigal
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::prodigal=2.6.3
+  - bioconda::pigz=2.6

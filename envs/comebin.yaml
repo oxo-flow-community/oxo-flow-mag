@@ -1,0 +1,9 @@
+---
+# Environment for comebin — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/comebin 1.0.4 module environment (modules/nf-core/comebin/main/environment.yml).
+name: comebin
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::comebin=1.0.4

@@ -1,0 +1,10 @@
+---
+# Environment for quast — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/quast 5.0.2 module environment (modules/nf-core/quast/main/environment.yml); also used for the QUAST_BINS rules.
+name: quast
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::quast=5.0.2
+  - bioconda::python=3.7.6

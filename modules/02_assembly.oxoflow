@@ -1,0 +1,291 @@
+[workflow]
+name = "02_assembly"
+description = "nf-core/mag 5.5.0 02_assembly fragment"
+# ---------------------------------------------------------------------------
+# ASSEMBLY (nf-core/mag 5.5.0 default path, assembler=spades+megahit):
+# SPADES / MEGAHIT -> GUNZIP (per assembler) -> QUAST (per assembler) ->
+# PRODIGAL (per assembler). oxo-flow has no {assembler} wildcard, so every
+# per-assembler process is one rule with the assembler name hard-coded in
+# rule name, prefixes and paths (see README fidelity table).
+# ---------------------------------------------------------------------------
+
+# SPADES (label process_high; upstream: spades.py --meta, prefix SPAdes-{id}).
+# spades_downstreaminput defaults to 'scaffolds', so the assembly file is
+# {id}.scaffolds.fa.gz (not contigs). spades -o ./ writes generic-named files,
+# so the rule runs in a scratch dir and moves the named outputs out.
+[[rules]]
+name = "spades"
+input = [
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz",
+]
+output = [
+    "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa.gz",
+    "{config.out_dir}/Assembly/SPAdes/SPAdes-{sample}.spades.log",
+]
+description = "Metagenomic assembly with SPAdes (upstream SPADES)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/assembly/SPAdes {config.out_dir}/Assembly/SPAdes
+mkdir -p .tmp/spades_{sample} && cd .tmp/spades_{sample}
+ln -sf "$wd/{input[0]}" r1.fastq.gz
+ln -sf "$wd/{input[1]}" r2.fastq.gz
+# --memory = task.memory in GB (72), spades writes generic-named files with -o ./
+spades.py \\
+    --meta \\
+    --threads {threads} \\
+    --memory 72 \\
+    -1 r1.fastq.gz \\
+    -2 r2.fastq.gz \\
+    -o ./
+mv spades.log SPAdes-{sample}.spades.log
+mv scaffolds.fasta SPAdes-{sample}.scaffolds.fa
+gzip -n SPAdes-{sample}.scaffolds.fa
+mv SPAdes-{sample}.scaffolds.fa.gz "$wd/intermediates/assembly/SPAdes/"
+mv SPAdes-{sample}.spades.log "$wd/{config.out_dir}/Assembly/SPAdes/"
+cd "$wd"
+rm -rf .tmp/spades_{sample}
+"""
+
+[rules.resources]
+threads = 10
+memory = "72G"
+time_limit = "24h"
+
+[rules.environment]
+conda = "envs/spades.yaml"
+
+# MEGAHIT (label process_high + 8 cpu/40GB/16h override, prefix MEGAHIT-{id})
+[[rules]]
+name = "megahit"
+input = [
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz",
+]
+output = [
+    "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa.gz",
+    "{config.out_dir}/Assembly/MEGAHIT/MEGAHIT-{sample}.log",
+]
+description = "Metagenomic assembly with MEGAHIT (upstream MEGAHIT)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/assembly/MEGAHIT {config.out_dir}/Assembly/MEGAHIT
+mkdir -p .tmp/megahit_{sample} && cd .tmp/megahit_{sample}
+ln -sf "$wd/{input[0]}" r1.fastq.gz
+ln -sf "$wd/{input[1]}" r2.fastq.gz
+# -m = task.memory.toBytes() = 40 GB; pigz compresses the assembly + the
+# intermediate_contigs; mv flattens megahit_out into the scratch dir
+megahit \\
+    -m 42949672960 \\
+    -t {threads} \\
+    -1 r1.fastq.gz \\
+    -2 r2.fastq.gz \\
+    --out-prefix MEGAHIT-{sample}
+pigz \\
+    --no-name \\
+    -p {threads} \\
+    megahit_out/*.fa \\
+    megahit_out/intermediate_contigs/*.fa
+mv megahit_out/* .
+mv MEGAHIT-{sample}.contigs.fa.gz "$wd/intermediates/assembly/MEGAHIT/"
+mv MEGAHIT-{sample}.log "$wd/{config.out_dir}/Assembly/MEGAHIT/"
+cd "$wd"
+rm -rf .tmp/megahit_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "40G"
+time_limit = "16h"
+
+[rules.environment]
+conda = "envs/megahit.yaml"
+
+# GUNZIP (label process_single; output name = input minus .gz minus last ext)
+[[rules]]
+name = "gunzip_spades"
+input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa.gz"]
+output = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
+description = "Decompress the SPAdes assembly (upstream GUNZIP on SPAdes output)"
+shell = """
+gzip -cd {input[0]} > {output[0]}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+[[rules]]
+name = "gunzip_megahit"
+input = ["intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa.gz"]
+output = ["intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa"]
+description = "Decompress the MEGAHIT assembly (upstream GUNZIP on MEGAHIT output)"
+shell = """
+gzip -cd {input[0]} > {output[0]}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+# QUAST (local quast_run; no label -> base 1 cpu/7GB/4h). report.tsv is
+# copied to report_rawassemblies.tsv (the file consumed by MultiQC). The
+# QUAST output files are published flat under
+# results/Assembly/{assembler}/QC/{sample}/ (upstream publishDir without a
+# pattern), with report_rawassemblies.tsv additionally kept in intermediates.
+[[rules]]
+name = "quast_spades"
+input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
+output = [
+    "intermediates/assembly/quast/SPAdes-{sample}.report_rawassemblies.tsv",
+    "{config.out_dir}/Assembly/SPAdes/QC/{sample}/report_rawassemblies.tsv",
+    "{config.out_dir}/Assembly/SPAdes/QC/{sample}/report.html",
+    "{config.out_dir}/Assembly/SPAdes/QC/{sample}/transposed_report.tsv",
+    "{config.out_dir}/Assembly/SPAdes/QC/{sample}/basic_stats",
+    "{config.out_dir}/Assembly/SPAdes/QC/{sample}/contigs_reports",
+]
+description = "QUAST QC of the SPAdes assembly (upstream QUAST)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/assembly/quast {config.out_dir}/Assembly/SPAdes/QC/{sample}
+mkdir -p .tmp/quast_spades_{sample} && cd .tmp/quast_spades_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa
+metaquast.py \\
+    --threads {threads} \\
+    --rna-finding \\
+    --max-ref-number 0 \\
+    -l "SPAdes-{sample}" \\
+    assembly.fa \\
+    -o QUAST
+cp QUAST/report.tsv QUAST/report_rawassemblies.tsv
+mv QUAST/report_rawassemblies.tsv "$wd/intermediates/assembly/quast/SPAdes-{sample}.report_rawassemblies.tsv"
+# upstream publishDir flattens QUAST/* into QC/{sample}/
+mv QUAST/* "$wd/{config.out_dir}/Assembly/SPAdes/QC/{sample}/"
+cd "$wd"
+rm -rf .tmp/quast_spades_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "7G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+[[rules]]
+name = "quast_megahit"
+input = ["intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa"]
+output = [
+    "intermediates/assembly/quast/MEGAHIT-{sample}.report_rawassemblies.tsv",
+    "{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/report_rawassemblies.tsv",
+    "{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/report.html",
+    "{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/transposed_report.tsv",
+    "{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/basic_stats",
+    "{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/contigs_reports",
+]
+description = "QUAST QC of the MEGAHIT assembly (upstream QUAST)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/assembly/quast {config.out_dir}/Assembly/MEGAHIT/QC/{sample}
+mkdir -p .tmp/quast_megahit_{sample} && cd .tmp/quast_megahit_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa
+metaquast.py \\
+    --threads {threads} \\
+    --rna-finding \\
+    --max-ref-number 0 \\
+    -l "MEGAHIT-{sample}" \\
+    assembly.fa \\
+    -o QUAST
+cp QUAST/report.tsv QUAST/report_rawassemblies.tsv
+mv QUAST/report_rawassemblies.tsv "$wd/intermediates/assembly/quast/MEGAHIT-{sample}.report_rawassemblies.tsv"
+# upstream publishDir flattens QUAST/* into QC/{sample}/
+mv QUAST/* "$wd/{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/"
+cd "$wd"
+rm -rf .tmp/quast_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "7G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+# PRODIGAL (label process_single + 4GB override, prefix {assembler}-{id}_prodigal)
+[[rules]]
+name = "prodigal_spades"
+input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
+output = [
+    "{config.out_dir}/Annotation/Prodigal/SPAdes/{sample}/SPAdes-{sample}_prodigal.fna.gz",
+    "{config.out_dir}/Annotation/Prodigal/SPAdes/{sample}/SPAdes-{sample}_prodigal.gff.gz",
+    "{config.out_dir}/Annotation/Prodigal/SPAdes/{sample}/SPAdes-{sample}_prodigal.faa.gz",
+    "{config.out_dir}/Annotation/Prodigal/SPAdes/{sample}/SPAdes-{sample}_prodigal_all.txt.gz",
+]
+description = "Gene prediction on the SPAdes assembly (upstream PRODIGAL)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Annotation/Prodigal/SPAdes/{sample}
+prefix=SPAdes-{sample}_prodigal
+pigz -cdf {input[0]} | prodigal \\
+    -p meta \\
+    -f gff \\
+    -d $prefix.fna \\
+    -o $prefix.gff \\
+    -a $prefix.faa \\
+    -s ${prefix}_all.txt
+pigz -nm $prefix.fna $prefix.gff $prefix.faa ${prefix}_all.txt
+mv $prefix.fna.gz $prefix.gff.gz $prefix.faa.gz ${prefix}_all.txt.gz \\
+    "{config.out_dir}/Annotation/Prodigal/SPAdes/{sample}/"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prodigal.yaml"
+
+[[rules]]
+name = "prodigal_megahit"
+input = ["intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa"]
+output = [
+    "{config.out_dir}/Annotation/Prodigal/MEGAHIT/{sample}/MEGAHIT-{sample}_prodigal.fna.gz",
+    "{config.out_dir}/Annotation/Prodigal/MEGAHIT/{sample}/MEGAHIT-{sample}_prodigal.gff.gz",
+    "{config.out_dir}/Annotation/Prodigal/MEGAHIT/{sample}/MEGAHIT-{sample}_prodigal.faa.gz",
+    "{config.out_dir}/Annotation/Prodigal/MEGAHIT/{sample}/MEGAHIT-{sample}_prodigal_all.txt.gz",
+]
+description = "Gene prediction on the MEGAHIT assembly (upstream PRODIGAL)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Annotation/Prodigal/MEGAHIT/{sample}
+prefix=MEGAHIT-{sample}_prodigal
+pigz -cdf {input[0]} | prodigal \\
+    -p meta \\
+    -f gff \\
+    -d $prefix.fna \\
+    -o $prefix.gff \\
+    -a $prefix.faa \\
+    -s ${prefix}_all.txt
+pigz -nm $prefix.fna $prefix.gff $prefix.faa ${prefix}_all.txt
+mv $prefix.fna.gz $prefix.gff.gz $prefix.faa.gz ${prefix}_all.txt.gz \\
+    "{config.out_dir}/Annotation/Prodigal/MEGAHIT/{sample}/"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prodigal.yaml"

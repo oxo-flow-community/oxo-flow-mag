@@ -1,0 +1,9 @@
+---
+# Environment for seqkit — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/seqkit/stats 2.9.0 module environment (modules/nf-core/seqkit/stats/environment.yml).
+name: seqkit
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::seqkit=2.9.0

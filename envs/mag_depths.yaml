@@ -1,0 +1,12 @@
+---
+# Environment for mag_depths — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/mag mag_depths local module environment (modules/local/mag_depths/environment.yml).
+name: mag_depths
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::metabat2=2.15
+  - bioconda::python=3.6.7
+  - bioconda::biopython=1.74
+  - conda-forge::pandas=1.1.5

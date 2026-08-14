@@ -1,0 +1,9 @@
+---
+# Environment for maxbin2 — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/maxbin2 2.2.7 module environment (modules/nf-core/maxbin2/main/environment.yml).
+name: maxbin2
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::maxbin2=2.2.7

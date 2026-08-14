@@ -1,0 +1,9 @@
+---
+# Environment for bowtie2 — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/bowtie2/build 2.4.2 module environment (modules/nf-core/bowtie2/build/environment.yml); used for the phiX index and the assembly index builds.
+name: bowtie2
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::bowtie2=2.4.2

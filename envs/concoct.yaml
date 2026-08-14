@@ -1,0 +1,10 @@
+---
+# Environment for concoct — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/concoct 1.1.0 module environment (modules/nf-core/concoct/main/environment.yml).
+name: concoct
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::concoct=1.1.0
+  - bioconda::setuptools=70

@@ -1,0 +1,10 @@
+---
+# Environment for gtdbtk_summary — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/mag gtdbtk_summary local module environment (modules/local/gtdbtk_summary/environment.yml).
+name: gtdbtk_summary
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::python=3.10.6
+  - bioconda::pandas=1.4.3

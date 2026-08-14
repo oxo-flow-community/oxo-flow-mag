@@ -1,0 +1,158 @@
+[workflow]
+name = "03_binning_prep"
+description = "nf-core/mag 5.5.0 03_binning_prep fragment"
+# ---------------------------------------------------------------------------
+# BINNING PREPARATION (nf-core/mag 5.5.0 default path, binning_map_mode=group):
+# BOWTIE2_ASSEMBLY_BUILD -> BOWTIE2_ASSEMBLY_ALIGN per assembly; every
+# assembly is aligned against every sample's reads in the cohort (upstream
+# group mode), which the align rule implements as a shell loop over
+# config.cohort_samples. Upstream names the alignments
+# {assembler}-{asm}-{reads}; the own-alignment log is renamed
+# {assembler}-{asm}.bowtie2.log.
+# ---------------------------------------------------------------------------
+
+# BOWTIE2_ASSEMBLY_BUILD (no label -> 1 cpu/7GB/4h). One index per assembly
+# in intermediates; upstream keeps the index files in each task's workdir.
+[[rules]]
+name = "bowtie2_build_spades"
+input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
+output = [
+    "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.1.bt2",
+    "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.rev.1.bt2",
+]
+description = "Build the bowtie2 index of the SPAdes assembly (upstream BOWTIE2_ASSEMBLY_BUILD)"
+shell = """
+mkdir -p intermediates/binning/assembly_index/SPAdes
+cd intermediates/binning/assembly_index/SPAdes
+bowtie2-build --threads {threads} "$OLDPWD/{input[0]}" "SPAdes-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "7G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/bowtie2.yaml"
+
+[[rules]]
+name = "bowtie2_build_megahit"
+input = ["intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa"]
+output = [
+    "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.1.bt2",
+    "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.rev.1.bt2",
+]
+description = "Build the bowtie2 index of the MEGAHIT assembly (upstream BOWTIE2_ASSEMBLY_BUILD)"
+shell = """
+mkdir -p intermediates/binning/assembly_index/MEGAHIT
+cd intermediates/binning/assembly_index/MEGAHIT
+bowtie2-build --threads {threads} "$OLDPWD/{input[0]}" "MEGAHIT-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "7G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/bowtie2.yaml"
+
+# BOWTIE2_ASSEMBLY_ALIGN (8 cpu / 12GB / 8h override). One rule instance per
+# assembly; inside, a shell loop aligns the cohort's reads (group mode).
+# BAMs stay in intermediates (upstream publishes them only when
+# save_assembly_mapped_reads is set); the bowtie2 logs are published under
+# results/Assembly/{assembler}/QC/{sample}/.
+[[rules]]
+name = "bowtie2_align_spades"
+input = ["intermediates/binning/assembly_index/SPAdes"]
+output = [
+    "intermediates/binning/alignments/SPAdes",
+    "{config.out_dir}/Assembly/SPAdes/QC/{sample}/SPAdes-{sample}.bowtie2.log",
+]
+depends_on = ["bowtie2_build_spades"]
+description = "Align all cohort reads against the SPAdes assembly (upstream BOWTIE2_ASSEMBLY_ALIGN, group mode)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/alignments/SPAdes {config.out_dir}/Assembly/SPAdes/QC/{sample}
+mkdir -p .tmp/align_spades_{sample} && cd .tmp/align_spades_{sample}
+# find the index base like the upstream module (works on symlinked dirs via find -L)
+ln -sf "$wd/intermediates/binning/assembly_index/SPAdes" index
+INDEX=$(find -L ./ -name "*.rev.1.bt2l" -o -name "*.rev.1.bt2" | sed 's/.rev.1.bt2l//' | sed 's/.rev.1.bt2//')
+[ -z "$INDEX" ] && echo "Bowtie2 index files not found" 1>&2 && exit 1
+for r in {config.cohort_samples}; do
+    name="SPAdes-{sample}-$r"
+    bowtie2 -p {threads} \\
+            -x "$INDEX" \\
+            -1 "$wd/intermediates/QC_shortreads/remove_phix/${r}_run1_phix_removed_1.unmapped.fastq.gz" \\
+            -2 "$wd/intermediates/QC_shortreads/remove_phix/${r}_run1_phix_removed_2.unmapped.fastq.gz" \\
+            2> ${name}.bowtie2.log | \\
+        samtools view -@ {threads} -bS | \\
+        samtools sort -@ {threads} -o ${name}.bam
+    samtools index ${name}.bam
+    # own-alignment log is renamed (upstream: if name == {asm}-{id}-{id})
+    if [ "$r" = "{sample}" ]; then
+        mv ${name}.bowtie2.log "SPAdes-{sample}.bowtie2.log"
+        mv "SPAdes-{sample}.bowtie2.log" "$wd/{config.out_dir}/Assembly/SPAdes/QC/{sample}/"
+    else
+        mv ${name}.bowtie2.log "$wd/{config.out_dir}/Assembly/SPAdes/QC/{sample}/"
+    fi
+    mv ${name}.bam ${name}.bam.bai "$wd/intermediates/binning/alignments/SPAdes/"
+done
+cd "$wd"
+rm -rf .tmp/align_spades_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "12G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/bowtie2_samtools.yaml"
+
+[[rules]]
+name = "bowtie2_align_megahit"
+input = ["intermediates/binning/assembly_index/MEGAHIT"]
+output = [
+    "intermediates/binning/alignments/MEGAHIT",
+    "{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/MEGAHIT-{sample}.bowtie2.log",
+]
+depends_on = ["bowtie2_build_megahit"]
+description = "Align all cohort reads against the MEGAHIT assembly (upstream BOWTIE2_ASSEMBLY_ALIGN, group mode)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/alignments/MEGAHIT {config.out_dir}/Assembly/MEGAHIT/QC/{sample}
+mkdir -p .tmp/align_megahit_{sample} && cd .tmp/align_megahit_{sample}
+ln -sf "$wd/intermediates/binning/assembly_index/MEGAHIT" index
+INDEX=$(find -L ./ -name "*.rev.1.bt2l" -o -name "*.rev.1.bt2" | sed 's/.rev.1.bt2l//' | sed 's/.rev.1.bt2//')
+[ -z "$INDEX" ] && echo "Bowtie2 index files not found" 1>&2 && exit 1
+for r in {config.cohort_samples}; do
+    name="MEGAHIT-{sample}-$r"
+    bowtie2 -p {threads} \\
+            -x "$INDEX" \\
+            -1 "$wd/intermediates/QC_shortreads/remove_phix/${r}_run1_phix_removed_1.unmapped.fastq.gz" \\
+            -2 "$wd/intermediates/QC_shortreads/remove_phix/${r}_run1_phix_removed_2.unmapped.fastq.gz" \\
+            2> ${name}.bowtie2.log | \\
+        samtools view -@ {threads} -bS | \\
+        samtools sort -@ {threads} -o ${name}.bam
+    samtools index ${name}.bam
+    # own-alignment log is renamed (upstream: if name == {asm}-{id}-{id})
+    if [ "$r" = "{sample}" ]; then
+        mv ${name}.bowtie2.log "MEGAHIT-{sample}.bowtie2.log"
+        mv "MEGAHIT-{sample}.bowtie2.log" "$wd/{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/"
+    else
+        mv ${name}.bowtie2.log "$wd/{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/"
+    fi
+    mv ${name}.bam ${name}.bam.bai "$wd/intermediates/binning/alignments/MEGAHIT/"
+done
+cd "$wd"
+rm -rf .tmp/align_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "12G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/bowtie2_samtools.yaml"

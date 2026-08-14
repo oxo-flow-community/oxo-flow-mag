@@ -1,0 +1,2195 @@
+[workflow]
+name = "05_binqc"
+description = "nf-core/mag 5.5.0 05_binqc fragment"
+# ---------------------------------------------------------------------------
+# BIN QC (nf-core/mag 5.5.0 default path): BUSCO per (assembler, binner)
+# group on bins and unbinned chunks (--auto-lineage, since busco_db is unset
+# by default), per-group JGI depths (MAG_DEPTHS), per-group metaQUAST on the
+# bins (QUAST_BINS), and ALE per assembly. The per-group summaries are
+# concatenated with qsv cat rowskey (upstream QSV_CAT); the BUSCO batch
+# summaries feed the GTDB-Tk filter in modules/06_taxonomy.oxoflow.
+#
+# Upstream runs each per-(assembler, binner) QC process twice per sample —
+# once for the bins (meta.refinement='unrefined') and once for the unbinned
+# contig chunks ('unrefined_unbinned') — in separate task workdirs with
+# identical output names. oxo-flow executes every rule in one shared working
+# directory, so each rule here runs the tool twice inside two scratch
+# subdirs and distinguishes the outputs by their publish directories:
+# .../BUSCO/{assembler}-{binner}-unclassified-unrefined[-_unbinned]-{sample}/.
+# BUSCO's output prefix is {meta.id}-{lineage} = {sample}-auto (upstream
+# default busco_db_lineage='auto').
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "busco_spades_metabat2"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBAT2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+]
+depends_on = ["metabat2_spades", "split_fasta_metabat2_spades"]
+description = "BUSCO completeness of the SPAdes MetaBAT2 bins and unbinned chunks (upstream BUSCO_BUSCO, --auto-lineage)"
+shell = """
+wd=$(pwd)
+# upstream: BUSCO_BBTOOLS_MEMORY export + augustus config fix (both no-ops
+# when the variables are unset; kept verbatim for fidelity)
+export BUSCO_BBTOOLS_MEMORY=4g
+ENV_AUGUSTUS=/opt/conda/etc/conda/activate.d/augustus.sh
+set +u
+if [ -z "${AUGUSTUS_CONFIG_PATH}" ] && [ -f "${ENV_AUGUSTUS}" ]; then
+    source "${ENV_AUGUSTUS}"
+fi
+set -u
+if [ ! -w "${AUGUSTUS_CONFIG_PATH}" ]; then
+    AUG_CONF_DIR=$( mktemp -d -p $PWD )
+    cp -r ${AUGUSTUS_CONFIG_PATH}/* $AUG_CONF_DIR
+    export AUGUSTUS_CONFIG_PATH=$AUG_CONF_DIR
+fi
+run_busco() {
+    # $1 = input glob pattern, $2 = publish dir (results)
+    mkdir -p input_seqs
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_seqs/$(basename "$f" .gz)
+    done
+    if ls input_seqs/* >/dev/null 2>&1; then
+        busco --cpu {threads} --in input_seqs --out {sample}-auto-busco --mode genome --auto-lineage
+        if [ -f {sample}-auto-busco/batch_summary.txt ]; then
+            grep -v 'Run failed; check logs' {sample}-auto-busco/batch_summary.txt > {sample}-auto-busco.batch_summary.txt
+        else
+            touch {sample}-auto-busco.batch_summary.txt
+        fi
+        mv {sample}-auto-busco/*/short_summary.*.txt . 2>/dev/null || true
+        mv {sample}-auto-busco/*/short_summary.*.json . 2>/dev/null || true
+        mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
+    else
+        touch {sample}-auto-busco.batch_summary.txt
+    fi
+    mkdir -p "$wd/$2"
+    mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
+    mv short_summary.* "$wd/$2/" 2>/dev/null || true
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/BUSCO
+mkdir -p .tmp/busco_spades_metabat2_{sample} && cd .tmp/busco_spades_metabat2_{sample}
+# bins (meta.refinement='unrefined')
+run_busco "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBAT2-unclassified-unrefined-{sample}"
+rm -rf input_seqs {sample}-auto-busco
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_busco "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/SPAdes-MetaBAT2-{sample}*[0-9].fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}"
+cd "$wd"
+rm -rf .tmp/busco_spades_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/busco.yaml"
+
+[[rules]]
+name = "mag_depths_spades_metabat2"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+    "intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz",
+]
+output = ["intermediates/binning/depths/bins/SPAdes-MetaBAT2-{sample}-binDepths.tsv"]
+depends_on = ["depths_spades", "metabat2_spades", "split_fasta_metabat2_spades"]
+description = "Per-bin median coverage of the SPAdes MetaBAT2 bins (upstream MAG_DEPTHS)"
+shell = """
+mkdir -p intermediates/binning/depths/bins
+bins_list=""
+for f in {config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.fa.gz \
+         {config.out_dir}/GenomeBinning/MetaBAT2/unbinned/SPAdes-MetaBAT2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] && bins_list="$bins_list $f"
+done
+if [ -n "$bins_list" ]; then
+    get_mag_depths.py --bins $bins_list \
+        --depths intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz \
+        --assembler SPAdes \
+        --id {sample} \
+        --binner MetaBAT2
+else
+    touch SPAdes-MetaBAT2-{sample}-binDepths.tsv
+fi
+mv SPAdes-MetaBAT2-{sample}-binDepths.tsv intermediates/binning/depths/bins/
+"""
+
+[rules.resources]
+threads = 1
+memory = "16G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+[[rules]]
+name = "quast_bins_spades_metabat2"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/SPAdes-MetaBAT2-unclassified-unrefined-{sample}-quast_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}-quast_summary.tsv",
+]
+depends_on = ["metabat2_spades", "split_fasta_metabat2_spades"]
+description = "Per-bin metaQUAST QC of the SPAdes MetaBAT2 bins and chunks (upstream QUAST_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/quast_spades_metabat2_{sample} && cd .tmp/quast_spades_metabat2_{sample}
+run_quast() {
+    # $1 = input glob pattern, $2 = summary prefix, $3 = output dir name
+    mkdir -p "$3"
+    n=0
+    for f in $1; do
+        [ -e "$f" ] || continue
+        bin=$(basename "$f")
+        metaquast.py --threads {threads} --max-ref-number 0 --rna-finding --gene-finding -l "$bin" "$f" -o "$3/$bin"
+        n=$((n+1))
+    done
+    if [ "$n" -gt 0 ]; then
+        for d in $3/*; do
+            if ! [ -f "$2-quast_summary.tsv" ]; then
+                cp "$d/transposed_report.tsv" "$2-quast_summary.tsv"
+            else
+                tail -n +2 "$d/transposed_report.tsv" >> "$2-quast_summary.tsv"
+            fi
+        done
+    else
+        touch "$2-quast_summary.tsv"
+    fi
+}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/QUAST"
+# bins (meta.refinement='unrefined')
+run_quast "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.fa.gz" "SPAdes-MetaBAT2-unclassified-unrefined-{sample}" QUAST_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_quast "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/SPAdes-MetaBAT2-{sample}*[0-9].fa.gz" "SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}" QUAST_chunks
+mv QUAST_bins/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv QUAST_chunks/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv *-quast_summary.tsv "$wd/{config.out_dir}/GenomeBinning/QC/"
+cd "$wd"
+rm -rf .tmp/quast_spades_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "2G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+[[rules]]
+name = "busco_spades_maxbin2"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MaxBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+]
+depends_on = ["maxbin2_spades", "split_fasta_maxbin2_spades"]
+description = "BUSCO completeness of the SPAdes MaxBin2 bins and unbinned chunks (upstream BUSCO_BUSCO, --auto-lineage)"
+shell = """
+wd=$(pwd)
+# upstream: BUSCO_BBTOOLS_MEMORY export + augustus config fix (both no-ops
+# when the variables are unset; kept verbatim for fidelity)
+export BUSCO_BBTOOLS_MEMORY=4g
+ENV_AUGUSTUS=/opt/conda/etc/conda/activate.d/augustus.sh
+set +u
+if [ -z "${AUGUSTUS_CONFIG_PATH}" ] && [ -f "${ENV_AUGUSTUS}" ]; then
+    source "${ENV_AUGUSTUS}"
+fi
+set -u
+if [ ! -w "${AUGUSTUS_CONFIG_PATH}" ]; then
+    AUG_CONF_DIR=$( mktemp -d -p $PWD )
+    cp -r ${AUGUSTUS_CONFIG_PATH}/* $AUG_CONF_DIR
+    export AUGUSTUS_CONFIG_PATH=$AUG_CONF_DIR
+fi
+run_busco() {
+    # $1 = input glob pattern, $2 = publish dir (results)
+    mkdir -p input_seqs
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_seqs/$(basename "$f" .gz)
+    done
+    if ls input_seqs/* >/dev/null 2>&1; then
+        busco --cpu {threads} --in input_seqs --out {sample}-auto-busco --mode genome --auto-lineage
+        if [ -f {sample}-auto-busco/batch_summary.txt ]; then
+            grep -v 'Run failed; check logs' {sample}-auto-busco/batch_summary.txt > {sample}-auto-busco.batch_summary.txt
+        else
+            touch {sample}-auto-busco.batch_summary.txt
+        fi
+        mv {sample}-auto-busco/*/short_summary.*.txt . 2>/dev/null || true
+        mv {sample}-auto-busco/*/short_summary.*.json . 2>/dev/null || true
+        mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
+    else
+        touch {sample}-auto-busco.batch_summary.txt
+    fi
+    mkdir -p "$wd/$2"
+    mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
+    mv short_summary.* "$wd/$2/" 2>/dev/null || true
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/BUSCO
+mkdir -p .tmp/busco_spades_maxbin2_{sample} && cd .tmp/busco_spades_maxbin2_{sample}
+# bins (meta.refinement='unrefined')
+run_busco "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}*.fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MaxBin2-unclassified-unrefined-{sample}"
+rm -rf input_seqs {sample}-auto-busco
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_busco "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/SPAdes-MaxBin2-{sample}*[0-9].fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}"
+cd "$wd"
+rm -rf .tmp/busco_spades_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/busco.yaml"
+
+[[rules]]
+name = "mag_depths_spades_maxbin2"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+    "intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz",
+]
+output = ["intermediates/binning/depths/bins/SPAdes-MaxBin2-{sample}-binDepths.tsv"]
+depends_on = ["depths_spades", "maxbin2_spades", "split_fasta_maxbin2_spades"]
+description = "Per-bin median coverage of the SPAdes MaxBin2 bins (upstream MAG_DEPTHS)"
+shell = """
+mkdir -p intermediates/binning/depths/bins
+bins_list=""
+for f in {config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}*.fa.gz \
+         {config.out_dir}/GenomeBinning/MaxBin2/unbinned/SPAdes-MaxBin2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] && bins_list="$bins_list $f"
+done
+if [ -n "$bins_list" ]; then
+    get_mag_depths.py --bins $bins_list \
+        --depths intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz \
+        --assembler SPAdes \
+        --id {sample} \
+        --binner MaxBin2
+else
+    touch SPAdes-MaxBin2-{sample}-binDepths.tsv
+fi
+mv SPAdes-MaxBin2-{sample}-binDepths.tsv intermediates/binning/depths/bins/
+"""
+
+[rules.resources]
+threads = 1
+memory = "16G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+[[rules]]
+name = "quast_bins_spades_maxbin2"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/SPAdes-MaxBin2-unclassified-unrefined-{sample}-quast_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}-quast_summary.tsv",
+]
+depends_on = ["maxbin2_spades", "split_fasta_maxbin2_spades"]
+description = "Per-bin metaQUAST QC of the SPAdes MaxBin2 bins and chunks (upstream QUAST_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/quast_spades_maxbin2_{sample} && cd .tmp/quast_spades_maxbin2_{sample}
+run_quast() {
+    # $1 = input glob pattern, $2 = summary prefix, $3 = output dir name
+    mkdir -p "$3"
+    n=0
+    for f in $1; do
+        [ -e "$f" ] || continue
+        bin=$(basename "$f")
+        metaquast.py --threads {threads} --max-ref-number 0 --rna-finding --gene-finding -l "$bin" "$f" -o "$3/$bin"
+        n=$((n+1))
+    done
+    if [ "$n" -gt 0 ]; then
+        for d in $3/*; do
+            if ! [ -f "$2-quast_summary.tsv" ]; then
+                cp "$d/transposed_report.tsv" "$2-quast_summary.tsv"
+            else
+                tail -n +2 "$d/transposed_report.tsv" >> "$2-quast_summary.tsv"
+            fi
+        done
+    else
+        touch "$2-quast_summary.tsv"
+    fi
+}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/QUAST"
+# bins (meta.refinement='unrefined')
+run_quast "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}*.fa.gz" "SPAdes-MaxBin2-unclassified-unrefined-{sample}" QUAST_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_quast "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/SPAdes-MaxBin2-{sample}*[0-9].fa.gz" "SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}" QUAST_chunks
+mv QUAST_bins/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv QUAST_chunks/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv *-quast_summary.tsv "$wd/{config.out_dir}/GenomeBinning/QC/"
+cd "$wd"
+rm -rf .tmp/quast_spades_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "2G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+[[rules]]
+name = "busco_spades_concoct"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-CONCOCT-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+]
+depends_on = ["concoct_extract_spades"]
+description = "BUSCO completeness of the SPAdes CONCOCT bins and unbinned chunks (upstream BUSCO_BUSCO, --auto-lineage)"
+shell = """
+wd=$(pwd)
+# upstream: BUSCO_BBTOOLS_MEMORY export + augustus config fix (both no-ops
+# when the variables are unset; kept verbatim for fidelity)
+export BUSCO_BBTOOLS_MEMORY=4g
+ENV_AUGUSTUS=/opt/conda/etc/conda/activate.d/augustus.sh
+set +u
+if [ -z "${AUGUSTUS_CONFIG_PATH}" ] && [ -f "${ENV_AUGUSTUS}" ]; then
+    source "${ENV_AUGUSTUS}"
+fi
+set -u
+if [ ! -w "${AUGUSTUS_CONFIG_PATH}" ]; then
+    AUG_CONF_DIR=$( mktemp -d -p $PWD )
+    cp -r ${AUGUSTUS_CONFIG_PATH}/* $AUG_CONF_DIR
+    export AUGUSTUS_CONFIG_PATH=$AUG_CONF_DIR
+fi
+run_busco() {
+    # $1 = input glob pattern, $2 = publish dir (results)
+    mkdir -p input_seqs
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_seqs/$(basename "$f" .gz)
+    done
+    if ls input_seqs/* >/dev/null 2>&1; then
+        busco --cpu {threads} --in input_seqs --out {sample}-auto-busco --mode genome --auto-lineage
+        if [ -f {sample}-auto-busco/batch_summary.txt ]; then
+            grep -v 'Run failed; check logs' {sample}-auto-busco/batch_summary.txt > {sample}-auto-busco.batch_summary.txt
+        else
+            touch {sample}-auto-busco.batch_summary.txt
+        fi
+        mv {sample}-auto-busco/*/short_summary.*.txt . 2>/dev/null || true
+        mv {sample}-auto-busco/*/short_summary.*.json . 2>/dev/null || true
+        mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
+    else
+        touch {sample}-auto-busco.batch_summary.txt
+    fi
+    mkdir -p "$wd/$2"
+    mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
+    mv short_summary.* "$wd/$2/" 2>/dev/null || true
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/BUSCO
+mkdir -p .tmp/busco_spades_concoct_{sample} && cd .tmp/busco_spades_concoct_{sample}
+# bins (meta.refinement='unrefined')
+run_busco "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}*.fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-CONCOCT-unclassified-unrefined-{sample}"
+rm -rf input_seqs {sample}-auto-busco
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_busco "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/SPAdes-CONCOCT-{sample}*[0-9].fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}"
+cd "$wd"
+rm -rf .tmp/busco_spades_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/busco.yaml"
+
+[[rules]]
+name = "mag_depths_spades_concoct"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+    "intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz",
+]
+output = ["intermediates/binning/depths/bins/SPAdes-CONCOCT-{sample}-binDepths.tsv"]
+depends_on = ["depths_spades", "concoct_extract_spades"]
+description = "Per-bin median coverage of the SPAdes CONCOCT bins (upstream MAG_DEPTHS)"
+shell = """
+mkdir -p intermediates/binning/depths/bins
+bins_list=""
+for f in {config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}*.fa.gz \
+         {config.out_dir}/GenomeBinning/CONCOCT/unbinned/SPAdes-CONCOCT-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] && bins_list="$bins_list $f"
+done
+if [ -n "$bins_list" ]; then
+    get_mag_depths.py --bins $bins_list \
+        --depths intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz \
+        --assembler SPAdes \
+        --id {sample} \
+        --binner CONCOCT
+else
+    touch SPAdes-CONCOCT-{sample}-binDepths.tsv
+fi
+mv SPAdes-CONCOCT-{sample}-binDepths.tsv intermediates/binning/depths/bins/
+"""
+
+[rules.resources]
+threads = 1
+memory = "16G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+[[rules]]
+name = "quast_bins_spades_concoct"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/SPAdes-CONCOCT-unclassified-unrefined-{sample}-quast_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}-quast_summary.tsv",
+]
+depends_on = ["concoct_extract_spades"]
+description = "Per-bin metaQUAST QC of the SPAdes CONCOCT bins and chunks (upstream QUAST_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/quast_spades_concoct_{sample} && cd .tmp/quast_spades_concoct_{sample}
+run_quast() {
+    # $1 = input glob pattern, $2 = summary prefix, $3 = output dir name
+    mkdir -p "$3"
+    n=0
+    for f in $1; do
+        [ -e "$f" ] || continue
+        bin=$(basename "$f")
+        metaquast.py --threads {threads} --max-ref-number 0 --rna-finding --gene-finding -l "$bin" "$f" -o "$3/$bin"
+        n=$((n+1))
+    done
+    if [ "$n" -gt 0 ]; then
+        for d in $3/*; do
+            if ! [ -f "$2-quast_summary.tsv" ]; then
+                cp "$d/transposed_report.tsv" "$2-quast_summary.tsv"
+            else
+                tail -n +2 "$d/transposed_report.tsv" >> "$2-quast_summary.tsv"
+            fi
+        done
+    else
+        touch "$2-quast_summary.tsv"
+    fi
+}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/QUAST"
+# bins (meta.refinement='unrefined')
+run_quast "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}*.fa.gz" "SPAdes-CONCOCT-unclassified-unrefined-{sample}" QUAST_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_quast "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/SPAdes-CONCOCT-{sample}*[0-9].fa.gz" "SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}" QUAST_chunks
+mv QUAST_bins/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv QUAST_chunks/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv *-quast_summary.tsv "$wd/{config.out_dir}/GenomeBinning/QC/"
+cd "$wd"
+rm -rf .tmp/quast_spades_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "2G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+[[rules]]
+name = "busco_spades_comebin"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-COMEBin-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+]
+depends_on = ["comebin_spades"]
+description = "BUSCO completeness of the SPAdes COMEBin bins and unbinned chunks (upstream BUSCO_BUSCO, --auto-lineage)"
+shell = """
+wd=$(pwd)
+# upstream: BUSCO_BBTOOLS_MEMORY export + augustus config fix (both no-ops
+# when the variables are unset; kept verbatim for fidelity)
+export BUSCO_BBTOOLS_MEMORY=4g
+ENV_AUGUSTUS=/opt/conda/etc/conda/activate.d/augustus.sh
+set +u
+if [ -z "${AUGUSTUS_CONFIG_PATH}" ] && [ -f "${ENV_AUGUSTUS}" ]; then
+    source "${ENV_AUGUSTUS}"
+fi
+set -u
+if [ ! -w "${AUGUSTUS_CONFIG_PATH}" ]; then
+    AUG_CONF_DIR=$( mktemp -d -p $PWD )
+    cp -r ${AUGUSTUS_CONFIG_PATH}/* $AUG_CONF_DIR
+    export AUGUSTUS_CONFIG_PATH=$AUG_CONF_DIR
+fi
+run_busco() {
+    # $1 = input glob pattern, $2 = publish dir (results)
+    mkdir -p input_seqs
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_seqs/$(basename "$f" .gz)
+    done
+    if ls input_seqs/* >/dev/null 2>&1; then
+        busco --cpu {threads} --in input_seqs --out {sample}-auto-busco --mode genome --auto-lineage
+        if [ -f {sample}-auto-busco/batch_summary.txt ]; then
+            grep -v 'Run failed; check logs' {sample}-auto-busco/batch_summary.txt > {sample}-auto-busco.batch_summary.txt
+        else
+            touch {sample}-auto-busco.batch_summary.txt
+        fi
+        mv {sample}-auto-busco/*/short_summary.*.txt . 2>/dev/null || true
+        mv {sample}-auto-busco/*/short_summary.*.json . 2>/dev/null || true
+        mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
+    else
+        touch {sample}-auto-busco.batch_summary.txt
+    fi
+    mkdir -p "$wd/$2"
+    mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
+    mv short_summary.* "$wd/$2/" 2>/dev/null || true
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/BUSCO
+mkdir -p .tmp/busco_spades_comebin_{sample} && cd .tmp/busco_spades_comebin_{sample}
+# bins (meta.refinement='unrefined')
+run_busco "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}*.fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-COMEBin-unclassified-unrefined-{sample}"
+rm -rf input_seqs {sample}-auto-busco
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_busco "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned/SPAdes-COMEBin-{sample}*[0-9].fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}"
+cd "$wd"
+rm -rf .tmp/busco_spades_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/busco.yaml"
+
+[[rules]]
+name = "mag_depths_spades_comebin"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+    "intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz",
+]
+output = ["intermediates/binning/depths/bins/SPAdes-COMEBin-{sample}-binDepths.tsv"]
+depends_on = ["depths_spades", "comebin_spades"]
+description = "Per-bin median coverage of the SPAdes COMEBin bins (upstream MAG_DEPTHS)"
+shell = """
+mkdir -p intermediates/binning/depths/bins
+bins_list=""
+for f in {config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}*.fa.gz \
+         {config.out_dir}/GenomeBinning/COMEBin/unbinned/SPAdes-COMEBin-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] && bins_list="$bins_list $f"
+done
+if [ -n "$bins_list" ]; then
+    get_mag_depths.py --bins $bins_list \
+        --depths intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz \
+        --assembler SPAdes \
+        --id {sample} \
+        --binner COMEBin
+else
+    touch SPAdes-COMEBin-{sample}-binDepths.tsv
+fi
+mv SPAdes-COMEBin-{sample}-binDepths.tsv intermediates/binning/depths/bins/
+"""
+
+[rules.resources]
+threads = 1
+memory = "16G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+[[rules]]
+name = "quast_bins_spades_comebin"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/SPAdes-COMEBin-unclassified-unrefined-{sample}-quast_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}-quast_summary.tsv",
+]
+depends_on = ["comebin_spades"]
+description = "Per-bin metaQUAST QC of the SPAdes COMEBin bins and chunks (upstream QUAST_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/quast_spades_comebin_{sample} && cd .tmp/quast_spades_comebin_{sample}
+run_quast() {
+    # $1 = input glob pattern, $2 = summary prefix, $3 = output dir name
+    mkdir -p "$3"
+    n=0
+    for f in $1; do
+        [ -e "$f" ] || continue
+        bin=$(basename "$f")
+        metaquast.py --threads {threads} --max-ref-number 0 --rna-finding --gene-finding -l "$bin" "$f" -o "$3/$bin"
+        n=$((n+1))
+    done
+    if [ "$n" -gt 0 ]; then
+        for d in $3/*; do
+            if ! [ -f "$2-quast_summary.tsv" ]; then
+                cp "$d/transposed_report.tsv" "$2-quast_summary.tsv"
+            else
+                tail -n +2 "$d/transposed_report.tsv" >> "$2-quast_summary.tsv"
+            fi
+        done
+    else
+        touch "$2-quast_summary.tsv"
+    fi
+}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/QUAST"
+# bins (meta.refinement='unrefined')
+run_quast "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}*.fa.gz" "SPAdes-COMEBin-unclassified-unrefined-{sample}" QUAST_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_quast "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned/SPAdes-COMEBin-{sample}*[0-9].fa.gz" "SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}" QUAST_chunks
+mv QUAST_bins/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv QUAST_chunks/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv *-quast_summary.tsv "$wd/{config.out_dir}/GenomeBinning/QC/"
+cd "$wd"
+rm -rf .tmp/quast_spades_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "2G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+[[rules]]
+name = "busco_spades_metabinner"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBinner-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+]
+depends_on = ["metabinner_bins_spades", "split_fasta_metabinner_spades"]
+description = "BUSCO completeness of the SPAdes MetaBinner bins and unbinned chunks (upstream BUSCO_BUSCO, --auto-lineage)"
+shell = """
+wd=$(pwd)
+# upstream: BUSCO_BBTOOLS_MEMORY export + augustus config fix (both no-ops
+# when the variables are unset; kept verbatim for fidelity)
+export BUSCO_BBTOOLS_MEMORY=4g
+ENV_AUGUSTUS=/opt/conda/etc/conda/activate.d/augustus.sh
+set +u
+if [ -z "${AUGUSTUS_CONFIG_PATH}" ] && [ -f "${ENV_AUGUSTUS}" ]; then
+    source "${ENV_AUGUSTUS}"
+fi
+set -u
+if [ ! -w "${AUGUSTUS_CONFIG_PATH}" ]; then
+    AUG_CONF_DIR=$( mktemp -d -p $PWD )
+    cp -r ${AUGUSTUS_CONFIG_PATH}/* $AUG_CONF_DIR
+    export AUGUSTUS_CONFIG_PATH=$AUG_CONF_DIR
+fi
+run_busco() {
+    # $1 = input glob pattern, $2 = publish dir (results)
+    mkdir -p input_seqs
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_seqs/$(basename "$f" .gz)
+    done
+    if ls input_seqs/* >/dev/null 2>&1; then
+        busco --cpu {threads} --in input_seqs --out {sample}-auto-busco --mode genome --auto-lineage
+        if [ -f {sample}-auto-busco/batch_summary.txt ]; then
+            grep -v 'Run failed; check logs' {sample}-auto-busco/batch_summary.txt > {sample}-auto-busco.batch_summary.txt
+        else
+            touch {sample}-auto-busco.batch_summary.txt
+        fi
+        mv {sample}-auto-busco/*/short_summary.*.txt . 2>/dev/null || true
+        mv {sample}-auto-busco/*/short_summary.*.json . 2>/dev/null || true
+        mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
+    else
+        touch {sample}-auto-busco.batch_summary.txt
+    fi
+    mkdir -p "$wd/$2"
+    mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
+    mv short_summary.* "$wd/$2/" 2>/dev/null || true
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/BUSCO
+mkdir -p .tmp/busco_spades_metabinner_{sample} && cd .tmp/busco_spades_metabinner_{sample}
+# bins (meta.refinement='unrefined')
+run_busco "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sample}*.fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBinner-unclassified-unrefined-{sample}"
+rm -rf input_seqs {sample}-auto-busco
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_busco "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/SPAdes-MetaBinner-{sample}*[0-9].fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}"
+cd "$wd"
+rm -rf .tmp/busco_spades_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/busco.yaml"
+
+[[rules]]
+name = "mag_depths_spades_metabinner"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+    "intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz",
+]
+output = ["intermediates/binning/depths/bins/SPAdes-MetaBinner-{sample}-binDepths.tsv"]
+depends_on = ["depths_spades", "metabinner_bins_spades", "split_fasta_metabinner_spades"]
+description = "Per-bin median coverage of the SPAdes MetaBinner bins (upstream MAG_DEPTHS)"
+shell = """
+mkdir -p intermediates/binning/depths/bins
+bins_list=""
+for f in {config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sample}*.fa.gz \
+         {config.out_dir}/GenomeBinning/MetaBinner/unbinned/SPAdes-MetaBinner-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] && bins_list="$bins_list $f"
+done
+if [ -n "$bins_list" ]; then
+    get_mag_depths.py --bins $bins_list \
+        --depths intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz \
+        --assembler SPAdes \
+        --id {sample} \
+        --binner MetaBinner
+else
+    touch SPAdes-MetaBinner-{sample}-binDepths.tsv
+fi
+mv SPAdes-MetaBinner-{sample}-binDepths.tsv intermediates/binning/depths/bins/
+"""
+
+[rules.resources]
+threads = 1
+memory = "16G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+[[rules]]
+name = "quast_bins_spades_metabinner"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/SPAdes-MetaBinner-unclassified-unrefined-{sample}-quast_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}-quast_summary.tsv",
+]
+depends_on = ["metabinner_bins_spades", "split_fasta_metabinner_spades"]
+description = "Per-bin metaQUAST QC of the SPAdes MetaBinner bins and chunks (upstream QUAST_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/quast_spades_metabinner_{sample} && cd .tmp/quast_spades_metabinner_{sample}
+run_quast() {
+    # $1 = input glob pattern, $2 = summary prefix, $3 = output dir name
+    mkdir -p "$3"
+    n=0
+    for f in $1; do
+        [ -e "$f" ] || continue
+        bin=$(basename "$f")
+        metaquast.py --threads {threads} --max-ref-number 0 --rna-finding --gene-finding -l "$bin" "$f" -o "$3/$bin"
+        n=$((n+1))
+    done
+    if [ "$n" -gt 0 ]; then
+        for d in $3/*; do
+            if ! [ -f "$2-quast_summary.tsv" ]; then
+                cp "$d/transposed_report.tsv" "$2-quast_summary.tsv"
+            else
+                tail -n +2 "$d/transposed_report.tsv" >> "$2-quast_summary.tsv"
+            fi
+        done
+    else
+        touch "$2-quast_summary.tsv"
+    fi
+}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/QUAST"
+# bins (meta.refinement='unrefined')
+run_quast "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sample}*.fa.gz" "SPAdes-MetaBinner-unclassified-unrefined-{sample}" QUAST_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_quast "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/SPAdes-MetaBinner-{sample}*[0-9].fa.gz" "SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}" QUAST_chunks
+mv QUAST_bins/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv QUAST_chunks/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv *-quast_summary.tsv "$wd/{config.out_dir}/GenomeBinning/QC/"
+cd "$wd"
+rm -rf .tmp/quast_spades_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "2G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+[[rules]]
+name = "busco_spades_semibin2"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-SemiBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+]
+depends_on = ["semibin_spades"]
+description = "BUSCO completeness of the SPAdes SemiBin2 bins and unbinned chunks (upstream BUSCO_BUSCO, --auto-lineage)"
+shell = """
+wd=$(pwd)
+# upstream: BUSCO_BBTOOLS_MEMORY export + augustus config fix (both no-ops
+# when the variables are unset; kept verbatim for fidelity)
+export BUSCO_BBTOOLS_MEMORY=4g
+ENV_AUGUSTUS=/opt/conda/etc/conda/activate.d/augustus.sh
+set +u
+if [ -z "${AUGUSTUS_CONFIG_PATH}" ] && [ -f "${ENV_AUGUSTUS}" ]; then
+    source "${ENV_AUGUSTUS}"
+fi
+set -u
+if [ ! -w "${AUGUSTUS_CONFIG_PATH}" ]; then
+    AUG_CONF_DIR=$( mktemp -d -p $PWD )
+    cp -r ${AUGUSTUS_CONFIG_PATH}/* $AUG_CONF_DIR
+    export AUGUSTUS_CONFIG_PATH=$AUG_CONF_DIR
+fi
+run_busco() {
+    # $1 = input glob pattern, $2 = publish dir (results)
+    mkdir -p input_seqs
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_seqs/$(basename "$f" .gz)
+    done
+    if ls input_seqs/* >/dev/null 2>&1; then
+        busco --cpu {threads} --in input_seqs --out {sample}-auto-busco --mode genome --auto-lineage
+        if [ -f {sample}-auto-busco/batch_summary.txt ]; then
+            grep -v 'Run failed; check logs' {sample}-auto-busco/batch_summary.txt > {sample}-auto-busco.batch_summary.txt
+        else
+            touch {sample}-auto-busco.batch_summary.txt
+        fi
+        mv {sample}-auto-busco/*/short_summary.*.txt . 2>/dev/null || true
+        mv {sample}-auto-busco/*/short_summary.*.json . 2>/dev/null || true
+        mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
+    else
+        touch {sample}-auto-busco.batch_summary.txt
+    fi
+    mkdir -p "$wd/$2"
+    mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
+    mv short_summary.* "$wd/$2/" 2>/dev/null || true
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/BUSCO
+mkdir -p .tmp/busco_spades_semibin2_{sample} && cd .tmp/busco_spades_semibin2_{sample}
+# bins (meta.refinement='unrefined')
+run_busco "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}*.fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-SemiBin2-unclassified-unrefined-{sample}"
+rm -rf input_seqs {sample}-auto-busco
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_busco "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/SPAdes-SemiBin2-{sample}*[0-9].fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}"
+cd "$wd"
+rm -rf .tmp/busco_spades_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/busco.yaml"
+
+[[rules]]
+name = "mag_depths_spades_semibin2"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+    "intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz",
+]
+output = ["intermediates/binning/depths/bins/SPAdes-SemiBin2-{sample}-binDepths.tsv"]
+depends_on = ["depths_spades", "semibin_spades"]
+description = "Per-bin median coverage of the SPAdes SemiBin2 bins (upstream MAG_DEPTHS)"
+shell = """
+mkdir -p intermediates/binning/depths/bins
+bins_list=""
+for f in {config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}*.fa.gz \
+         {config.out_dir}/GenomeBinning/SemiBin2/unbinned/SPAdes-SemiBin2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] && bins_list="$bins_list $f"
+done
+if [ -n "$bins_list" ]; then
+    get_mag_depths.py --bins $bins_list \
+        --depths intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz \
+        --assembler SPAdes \
+        --id {sample} \
+        --binner SemiBin2
+else
+    touch SPAdes-SemiBin2-{sample}-binDepths.tsv
+fi
+mv SPAdes-SemiBin2-{sample}-binDepths.tsv intermediates/binning/depths/bins/
+"""
+
+[rules.resources]
+threads = 1
+memory = "16G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+[[rules]]
+name = "quast_bins_spades_semibin2"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/SPAdes-SemiBin2-unclassified-unrefined-{sample}-quast_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}-quast_summary.tsv",
+]
+depends_on = ["semibin_spades"]
+description = "Per-bin metaQUAST QC of the SPAdes SemiBin2 bins and chunks (upstream QUAST_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/quast_spades_semibin2_{sample} && cd .tmp/quast_spades_semibin2_{sample}
+run_quast() {
+    # $1 = input glob pattern, $2 = summary prefix, $3 = output dir name
+    mkdir -p "$3"
+    n=0
+    for f in $1; do
+        [ -e "$f" ] || continue
+        bin=$(basename "$f")
+        metaquast.py --threads {threads} --max-ref-number 0 --rna-finding --gene-finding -l "$bin" "$f" -o "$3/$bin"
+        n=$((n+1))
+    done
+    if [ "$n" -gt 0 ]; then
+        for d in $3/*; do
+            if ! [ -f "$2-quast_summary.tsv" ]; then
+                cp "$d/transposed_report.tsv" "$2-quast_summary.tsv"
+            else
+                tail -n +2 "$d/transposed_report.tsv" >> "$2-quast_summary.tsv"
+            fi
+        done
+    else
+        touch "$2-quast_summary.tsv"
+    fi
+}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/QUAST"
+# bins (meta.refinement='unrefined')
+run_quast "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}*.fa.gz" "SPAdes-SemiBin2-unclassified-unrefined-{sample}" QUAST_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_quast "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/SPAdes-SemiBin2-{sample}*[0-9].fa.gz" "SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}" QUAST_chunks
+mv QUAST_bins/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv QUAST_chunks/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv *-quast_summary.tsv "$wd/{config.out_dir}/GenomeBinning/QC/"
+cd "$wd"
+rm -rf .tmp/quast_spades_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "2G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+[[rules]]
+name = "busco_megahit_metabat2"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+]
+depends_on = ["metabat2_megahit", "split_fasta_metabat2_megahit"]
+description = "BUSCO completeness of the MEGAHIT MetaBAT2 bins and unbinned chunks (upstream BUSCO_BUSCO, --auto-lineage)"
+shell = """
+wd=$(pwd)
+# upstream: BUSCO_BBTOOLS_MEMORY export + augustus config fix (both no-ops
+# when the variables are unset; kept verbatim for fidelity)
+export BUSCO_BBTOOLS_MEMORY=4g
+ENV_AUGUSTUS=/opt/conda/etc/conda/activate.d/augustus.sh
+set +u
+if [ -z "${AUGUSTUS_CONFIG_PATH}" ] && [ -f "${ENV_AUGUSTUS}" ]; then
+    source "${ENV_AUGUSTUS}"
+fi
+set -u
+if [ ! -w "${AUGUSTUS_CONFIG_PATH}" ]; then
+    AUG_CONF_DIR=$( mktemp -d -p $PWD )
+    cp -r ${AUGUSTUS_CONFIG_PATH}/* $AUG_CONF_DIR
+    export AUGUSTUS_CONFIG_PATH=$AUG_CONF_DIR
+fi
+run_busco() {
+    # $1 = input glob pattern, $2 = publish dir (results)
+    mkdir -p input_seqs
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_seqs/$(basename "$f" .gz)
+    done
+    if ls input_seqs/* >/dev/null 2>&1; then
+        busco --cpu {threads} --in input_seqs --out {sample}-auto-busco --mode genome --auto-lineage
+        if [ -f {sample}-auto-busco/batch_summary.txt ]; then
+            grep -v 'Run failed; check logs' {sample}-auto-busco/batch_summary.txt > {sample}-auto-busco.batch_summary.txt
+        else
+            touch {sample}-auto-busco.batch_summary.txt
+        fi
+        mv {sample}-auto-busco/*/short_summary.*.txt . 2>/dev/null || true
+        mv {sample}-auto-busco/*/short_summary.*.json . 2>/dev/null || true
+        mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
+    else
+        touch {sample}-auto-busco.batch_summary.txt
+    fi
+    mkdir -p "$wd/$2"
+    mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
+    mv short_summary.* "$wd/$2/" 2>/dev/null || true
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/BUSCO
+mkdir -p .tmp/busco_megahit_metabat2_{sample} && cd .tmp/busco_megahit_metabat2_{sample}
+# bins (meta.refinement='unrefined')
+run_busco "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*.fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}"
+rm -rf input_seqs {sample}-auto-busco
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_busco "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/MEGAHIT-MetaBAT2-{sample}*[0-9].fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}"
+cd "$wd"
+rm -rf .tmp/busco_megahit_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/busco.yaml"
+
+[[rules]]
+name = "mag_depths_megahit_metabat2"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+    "intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz",
+]
+output = ["intermediates/binning/depths/bins/MEGAHIT-MetaBAT2-{sample}-binDepths.tsv"]
+depends_on = ["depths_megahit", "metabat2_megahit", "split_fasta_metabat2_megahit"]
+description = "Per-bin median coverage of the MEGAHIT MetaBAT2 bins (upstream MAG_DEPTHS)"
+shell = """
+mkdir -p intermediates/binning/depths/bins
+bins_list=""
+for f in {config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*.fa.gz \
+         {config.out_dir}/GenomeBinning/MetaBAT2/unbinned/MEGAHIT-MetaBAT2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] && bins_list="$bins_list $f"
+done
+if [ -n "$bins_list" ]; then
+    get_mag_depths.py --bins $bins_list \
+        --depths intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz \
+        --assembler MEGAHIT \
+        --id {sample} \
+        --binner MetaBAT2
+else
+    touch MEGAHIT-MetaBAT2-{sample}-binDepths.tsv
+fi
+mv MEGAHIT-MetaBAT2-{sample}-binDepths.tsv intermediates/binning/depths/bins/
+"""
+
+[rules.resources]
+threads = 1
+memory = "16G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+[[rules]]
+name = "quast_bins_megahit_metabat2"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}-quast_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}-quast_summary.tsv",
+]
+depends_on = ["metabat2_megahit", "split_fasta_metabat2_megahit"]
+description = "Per-bin metaQUAST QC of the MEGAHIT MetaBAT2 bins and chunks (upstream QUAST_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/quast_megahit_metabat2_{sample} && cd .tmp/quast_megahit_metabat2_{sample}
+run_quast() {
+    # $1 = input glob pattern, $2 = summary prefix, $3 = output dir name
+    mkdir -p "$3"
+    n=0
+    for f in $1; do
+        [ -e "$f" ] || continue
+        bin=$(basename "$f")
+        metaquast.py --threads {threads} --max-ref-number 0 --rna-finding --gene-finding -l "$bin" "$f" -o "$3/$bin"
+        n=$((n+1))
+    done
+    if [ "$n" -gt 0 ]; then
+        for d in $3/*; do
+            if ! [ -f "$2-quast_summary.tsv" ]; then
+                cp "$d/transposed_report.tsv" "$2-quast_summary.tsv"
+            else
+                tail -n +2 "$d/transposed_report.tsv" >> "$2-quast_summary.tsv"
+            fi
+        done
+    else
+        touch "$2-quast_summary.tsv"
+    fi
+}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/QUAST"
+# bins (meta.refinement='unrefined')
+run_quast "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*.fa.gz" "MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}" QUAST_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_quast "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/MEGAHIT-MetaBAT2-{sample}*[0-9].fa.gz" "MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}" QUAST_chunks
+mv QUAST_bins/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv QUAST_chunks/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv *-quast_summary.tsv "$wd/{config.out_dir}/GenomeBinning/QC/"
+cd "$wd"
+rm -rf .tmp/quast_megahit_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "2G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+[[rules]]
+name = "busco_megahit_maxbin2"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+]
+depends_on = ["maxbin2_megahit", "split_fasta_maxbin2_megahit"]
+description = "BUSCO completeness of the MEGAHIT MaxBin2 bins and unbinned chunks (upstream BUSCO_BUSCO, --auto-lineage)"
+shell = """
+wd=$(pwd)
+# upstream: BUSCO_BBTOOLS_MEMORY export + augustus config fix (both no-ops
+# when the variables are unset; kept verbatim for fidelity)
+export BUSCO_BBTOOLS_MEMORY=4g
+ENV_AUGUSTUS=/opt/conda/etc/conda/activate.d/augustus.sh
+set +u
+if [ -z "${AUGUSTUS_CONFIG_PATH}" ] && [ -f "${ENV_AUGUSTUS}" ]; then
+    source "${ENV_AUGUSTUS}"
+fi
+set -u
+if [ ! -w "${AUGUSTUS_CONFIG_PATH}" ]; then
+    AUG_CONF_DIR=$( mktemp -d -p $PWD )
+    cp -r ${AUGUSTUS_CONFIG_PATH}/* $AUG_CONF_DIR
+    export AUGUSTUS_CONFIG_PATH=$AUG_CONF_DIR
+fi
+run_busco() {
+    # $1 = input glob pattern, $2 = publish dir (results)
+    mkdir -p input_seqs
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_seqs/$(basename "$f" .gz)
+    done
+    if ls input_seqs/* >/dev/null 2>&1; then
+        busco --cpu {threads} --in input_seqs --out {sample}-auto-busco --mode genome --auto-lineage
+        if [ -f {sample}-auto-busco/batch_summary.txt ]; then
+            grep -v 'Run failed; check logs' {sample}-auto-busco/batch_summary.txt > {sample}-auto-busco.batch_summary.txt
+        else
+            touch {sample}-auto-busco.batch_summary.txt
+        fi
+        mv {sample}-auto-busco/*/short_summary.*.txt . 2>/dev/null || true
+        mv {sample}-auto-busco/*/short_summary.*.json . 2>/dev/null || true
+        mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
+    else
+        touch {sample}-auto-busco.batch_summary.txt
+    fi
+    mkdir -p "$wd/$2"
+    mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
+    mv short_summary.* "$wd/$2/" 2>/dev/null || true
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/BUSCO
+mkdir -p .tmp/busco_megahit_maxbin2_{sample} && cd .tmp/busco_megahit_maxbin2_{sample}
+# bins (meta.refinement='unrefined')
+run_busco "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}*.fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}"
+rm -rf input_seqs {sample}-auto-busco
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_busco "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/MEGAHIT-MaxBin2-{sample}*[0-9].fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}"
+cd "$wd"
+rm -rf .tmp/busco_megahit_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/busco.yaml"
+
+[[rules]]
+name = "mag_depths_megahit_maxbin2"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+    "intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz",
+]
+output = ["intermediates/binning/depths/bins/MEGAHIT-MaxBin2-{sample}-binDepths.tsv"]
+depends_on = ["depths_megahit", "maxbin2_megahit", "split_fasta_maxbin2_megahit"]
+description = "Per-bin median coverage of the MEGAHIT MaxBin2 bins (upstream MAG_DEPTHS)"
+shell = """
+mkdir -p intermediates/binning/depths/bins
+bins_list=""
+for f in {config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}*.fa.gz \
+         {config.out_dir}/GenomeBinning/MaxBin2/unbinned/MEGAHIT-MaxBin2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] && bins_list="$bins_list $f"
+done
+if [ -n "$bins_list" ]; then
+    get_mag_depths.py --bins $bins_list \
+        --depths intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz \
+        --assembler MEGAHIT \
+        --id {sample} \
+        --binner MaxBin2
+else
+    touch MEGAHIT-MaxBin2-{sample}-binDepths.tsv
+fi
+mv MEGAHIT-MaxBin2-{sample}-binDepths.tsv intermediates/binning/depths/bins/
+"""
+
+[rules.resources]
+threads = 1
+memory = "16G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+[[rules]]
+name = "quast_bins_megahit_maxbin2"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}-quast_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}-quast_summary.tsv",
+]
+depends_on = ["maxbin2_megahit", "split_fasta_maxbin2_megahit"]
+description = "Per-bin metaQUAST QC of the MEGAHIT MaxBin2 bins and chunks (upstream QUAST_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/quast_megahit_maxbin2_{sample} && cd .tmp/quast_megahit_maxbin2_{sample}
+run_quast() {
+    # $1 = input glob pattern, $2 = summary prefix, $3 = output dir name
+    mkdir -p "$3"
+    n=0
+    for f in $1; do
+        [ -e "$f" ] || continue
+        bin=$(basename "$f")
+        metaquast.py --threads {threads} --max-ref-number 0 --rna-finding --gene-finding -l "$bin" "$f" -o "$3/$bin"
+        n=$((n+1))
+    done
+    if [ "$n" -gt 0 ]; then
+        for d in $3/*; do
+            if ! [ -f "$2-quast_summary.tsv" ]; then
+                cp "$d/transposed_report.tsv" "$2-quast_summary.tsv"
+            else
+                tail -n +2 "$d/transposed_report.tsv" >> "$2-quast_summary.tsv"
+            fi
+        done
+    else
+        touch "$2-quast_summary.tsv"
+    fi
+}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/QUAST"
+# bins (meta.refinement='unrefined')
+run_quast "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}*.fa.gz" "MEGAHIT-MaxBin2-unclassified-unrefined-{sample}" QUAST_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_quast "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/MEGAHIT-MaxBin2-{sample}*[0-9].fa.gz" "MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}" QUAST_chunks
+mv QUAST_bins/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv QUAST_chunks/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv *-quast_summary.tsv "$wd/{config.out_dir}/GenomeBinning/QC/"
+cd "$wd"
+rm -rf .tmp/quast_megahit_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "2G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+[[rules]]
+name = "busco_megahit_concoct"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+]
+depends_on = ["concoct_extract_megahit"]
+description = "BUSCO completeness of the MEGAHIT CONCOCT bins and unbinned chunks (upstream BUSCO_BUSCO, --auto-lineage)"
+shell = """
+wd=$(pwd)
+# upstream: BUSCO_BBTOOLS_MEMORY export + augustus config fix (both no-ops
+# when the variables are unset; kept verbatim for fidelity)
+export BUSCO_BBTOOLS_MEMORY=4g
+ENV_AUGUSTUS=/opt/conda/etc/conda/activate.d/augustus.sh
+set +u
+if [ -z "${AUGUSTUS_CONFIG_PATH}" ] && [ -f "${ENV_AUGUSTUS}" ]; then
+    source "${ENV_AUGUSTUS}"
+fi
+set -u
+if [ ! -w "${AUGUSTUS_CONFIG_PATH}" ]; then
+    AUG_CONF_DIR=$( mktemp -d -p $PWD )
+    cp -r ${AUGUSTUS_CONFIG_PATH}/* $AUG_CONF_DIR
+    export AUGUSTUS_CONFIG_PATH=$AUG_CONF_DIR
+fi
+run_busco() {
+    # $1 = input glob pattern, $2 = publish dir (results)
+    mkdir -p input_seqs
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_seqs/$(basename "$f" .gz)
+    done
+    if ls input_seqs/* >/dev/null 2>&1; then
+        busco --cpu {threads} --in input_seqs --out {sample}-auto-busco --mode genome --auto-lineage
+        if [ -f {sample}-auto-busco/batch_summary.txt ]; then
+            grep -v 'Run failed; check logs' {sample}-auto-busco/batch_summary.txt > {sample}-auto-busco.batch_summary.txt
+        else
+            touch {sample}-auto-busco.batch_summary.txt
+        fi
+        mv {sample}-auto-busco/*/short_summary.*.txt . 2>/dev/null || true
+        mv {sample}-auto-busco/*/short_summary.*.json . 2>/dev/null || true
+        mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
+    else
+        touch {sample}-auto-busco.batch_summary.txt
+    fi
+    mkdir -p "$wd/$2"
+    mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
+    mv short_summary.* "$wd/$2/" 2>/dev/null || true
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/BUSCO
+mkdir -p .tmp/busco_megahit_concoct_{sample} && cd .tmp/busco_megahit_concoct_{sample}
+# bins (meta.refinement='unrefined')
+run_busco "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}*.fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}"
+rm -rf input_seqs {sample}-auto-busco
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_busco "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/MEGAHIT-CONCOCT-{sample}*[0-9].fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}"
+cd "$wd"
+rm -rf .tmp/busco_megahit_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/busco.yaml"
+
+[[rules]]
+name = "mag_depths_megahit_concoct"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+    "intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz",
+]
+output = ["intermediates/binning/depths/bins/MEGAHIT-CONCOCT-{sample}-binDepths.tsv"]
+depends_on = ["depths_megahit", "concoct_extract_megahit"]
+description = "Per-bin median coverage of the MEGAHIT CONCOCT bins (upstream MAG_DEPTHS)"
+shell = """
+mkdir -p intermediates/binning/depths/bins
+bins_list=""
+for f in {config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}*.fa.gz \
+         {config.out_dir}/GenomeBinning/CONCOCT/unbinned/MEGAHIT-CONCOCT-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] && bins_list="$bins_list $f"
+done
+if [ -n "$bins_list" ]; then
+    get_mag_depths.py --bins $bins_list \
+        --depths intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz \
+        --assembler MEGAHIT \
+        --id {sample} \
+        --binner CONCOCT
+else
+    touch MEGAHIT-CONCOCT-{sample}-binDepths.tsv
+fi
+mv MEGAHIT-CONCOCT-{sample}-binDepths.tsv intermediates/binning/depths/bins/
+"""
+
+[rules.resources]
+threads = 1
+memory = "16G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+[[rules]]
+name = "quast_bins_megahit_concoct"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}-quast_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}-quast_summary.tsv",
+]
+depends_on = ["concoct_extract_megahit"]
+description = "Per-bin metaQUAST QC of the MEGAHIT CONCOCT bins and chunks (upstream QUAST_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/quast_megahit_concoct_{sample} && cd .tmp/quast_megahit_concoct_{sample}
+run_quast() {
+    # $1 = input glob pattern, $2 = summary prefix, $3 = output dir name
+    mkdir -p "$3"
+    n=0
+    for f in $1; do
+        [ -e "$f" ] || continue
+        bin=$(basename "$f")
+        metaquast.py --threads {threads} --max-ref-number 0 --rna-finding --gene-finding -l "$bin" "$f" -o "$3/$bin"
+        n=$((n+1))
+    done
+    if [ "$n" -gt 0 ]; then
+        for d in $3/*; do
+            if ! [ -f "$2-quast_summary.tsv" ]; then
+                cp "$d/transposed_report.tsv" "$2-quast_summary.tsv"
+            else
+                tail -n +2 "$d/transposed_report.tsv" >> "$2-quast_summary.tsv"
+            fi
+        done
+    else
+        touch "$2-quast_summary.tsv"
+    fi
+}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/QUAST"
+# bins (meta.refinement='unrefined')
+run_quast "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}*.fa.gz" "MEGAHIT-CONCOCT-unclassified-unrefined-{sample}" QUAST_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_quast "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/MEGAHIT-CONCOCT-{sample}*[0-9].fa.gz" "MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}" QUAST_chunks
+mv QUAST_bins/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv QUAST_chunks/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv *-quast_summary.tsv "$wd/{config.out_dir}/GenomeBinning/QC/"
+cd "$wd"
+rm -rf .tmp/quast_megahit_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "2G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+[[rules]]
+name = "busco_megahit_comebin"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-COMEBin-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+]
+depends_on = ["comebin_megahit"]
+description = "BUSCO completeness of the MEGAHIT COMEBin bins and unbinned chunks (upstream BUSCO_BUSCO, --auto-lineage)"
+shell = """
+wd=$(pwd)
+# upstream: BUSCO_BBTOOLS_MEMORY export + augustus config fix (both no-ops
+# when the variables are unset; kept verbatim for fidelity)
+export BUSCO_BBTOOLS_MEMORY=4g
+ENV_AUGUSTUS=/opt/conda/etc/conda/activate.d/augustus.sh
+set +u
+if [ -z "${AUGUSTUS_CONFIG_PATH}" ] && [ -f "${ENV_AUGUSTUS}" ]; then
+    source "${ENV_AUGUSTUS}"
+fi
+set -u
+if [ ! -w "${AUGUSTUS_CONFIG_PATH}" ]; then
+    AUG_CONF_DIR=$( mktemp -d -p $PWD )
+    cp -r ${AUGUSTUS_CONFIG_PATH}/* $AUG_CONF_DIR
+    export AUGUSTUS_CONFIG_PATH=$AUG_CONF_DIR
+fi
+run_busco() {
+    # $1 = input glob pattern, $2 = publish dir (results)
+    mkdir -p input_seqs
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_seqs/$(basename "$f" .gz)
+    done
+    if ls input_seqs/* >/dev/null 2>&1; then
+        busco --cpu {threads} --in input_seqs --out {sample}-auto-busco --mode genome --auto-lineage
+        if [ -f {sample}-auto-busco/batch_summary.txt ]; then
+            grep -v 'Run failed; check logs' {sample}-auto-busco/batch_summary.txt > {sample}-auto-busco.batch_summary.txt
+        else
+            touch {sample}-auto-busco.batch_summary.txt
+        fi
+        mv {sample}-auto-busco/*/short_summary.*.txt . 2>/dev/null || true
+        mv {sample}-auto-busco/*/short_summary.*.json . 2>/dev/null || true
+        mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
+    else
+        touch {sample}-auto-busco.batch_summary.txt
+    fi
+    mkdir -p "$wd/$2"
+    mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
+    mv short_summary.* "$wd/$2/" 2>/dev/null || true
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/BUSCO
+mkdir -p .tmp/busco_megahit_comebin_{sample} && cd .tmp/busco_megahit_comebin_{sample}
+# bins (meta.refinement='unrefined')
+run_busco "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}*.fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-COMEBin-unclassified-unrefined-{sample}"
+rm -rf input_seqs {sample}-auto-busco
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_busco "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned/MEGAHIT-COMEBin-{sample}*[0-9].fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}"
+cd "$wd"
+rm -rf .tmp/busco_megahit_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/busco.yaml"
+
+[[rules]]
+name = "mag_depths_megahit_comebin"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+    "intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz",
+]
+output = ["intermediates/binning/depths/bins/MEGAHIT-COMEBin-{sample}-binDepths.tsv"]
+depends_on = ["depths_megahit", "comebin_megahit"]
+description = "Per-bin median coverage of the MEGAHIT COMEBin bins (upstream MAG_DEPTHS)"
+shell = """
+mkdir -p intermediates/binning/depths/bins
+bins_list=""
+for f in {config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}*.fa.gz \
+         {config.out_dir}/GenomeBinning/COMEBin/unbinned/MEGAHIT-COMEBin-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] && bins_list="$bins_list $f"
+done
+if [ -n "$bins_list" ]; then
+    get_mag_depths.py --bins $bins_list \
+        --depths intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz \
+        --assembler MEGAHIT \
+        --id {sample} \
+        --binner COMEBin
+else
+    touch MEGAHIT-COMEBin-{sample}-binDepths.tsv
+fi
+mv MEGAHIT-COMEBin-{sample}-binDepths.tsv intermediates/binning/depths/bins/
+"""
+
+[rules.resources]
+threads = 1
+memory = "16G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+[[rules]]
+name = "quast_bins_megahit_comebin"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/MEGAHIT-COMEBin-unclassified-unrefined-{sample}-quast_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}-quast_summary.tsv",
+]
+depends_on = ["comebin_megahit"]
+description = "Per-bin metaQUAST QC of the MEGAHIT COMEBin bins and chunks (upstream QUAST_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/quast_megahit_comebin_{sample} && cd .tmp/quast_megahit_comebin_{sample}
+run_quast() {
+    # $1 = input glob pattern, $2 = summary prefix, $3 = output dir name
+    mkdir -p "$3"
+    n=0
+    for f in $1; do
+        [ -e "$f" ] || continue
+        bin=$(basename "$f")
+        metaquast.py --threads {threads} --max-ref-number 0 --rna-finding --gene-finding -l "$bin" "$f" -o "$3/$bin"
+        n=$((n+1))
+    done
+    if [ "$n" -gt 0 ]; then
+        for d in $3/*; do
+            if ! [ -f "$2-quast_summary.tsv" ]; then
+                cp "$d/transposed_report.tsv" "$2-quast_summary.tsv"
+            else
+                tail -n +2 "$d/transposed_report.tsv" >> "$2-quast_summary.tsv"
+            fi
+        done
+    else
+        touch "$2-quast_summary.tsv"
+    fi
+}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/QUAST"
+# bins (meta.refinement='unrefined')
+run_quast "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}*.fa.gz" "MEGAHIT-COMEBin-unclassified-unrefined-{sample}" QUAST_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_quast "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned/MEGAHIT-COMEBin-{sample}*[0-9].fa.gz" "MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}" QUAST_chunks
+mv QUAST_bins/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv QUAST_chunks/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv *-quast_summary.tsv "$wd/{config.out_dir}/GenomeBinning/QC/"
+cd "$wd"
+rm -rf .tmp/quast_megahit_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "2G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+[[rules]]
+name = "busco_megahit_metabinner"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+]
+depends_on = ["metabinner_bins_megahit", "split_fasta_metabinner_megahit"]
+description = "BUSCO completeness of the MEGAHIT MetaBinner bins and unbinned chunks (upstream BUSCO_BUSCO, --auto-lineage)"
+shell = """
+wd=$(pwd)
+# upstream: BUSCO_BBTOOLS_MEMORY export + augustus config fix (both no-ops
+# when the variables are unset; kept verbatim for fidelity)
+export BUSCO_BBTOOLS_MEMORY=4g
+ENV_AUGUSTUS=/opt/conda/etc/conda/activate.d/augustus.sh
+set +u
+if [ -z "${AUGUSTUS_CONFIG_PATH}" ] && [ -f "${ENV_AUGUSTUS}" ]; then
+    source "${ENV_AUGUSTUS}"
+fi
+set -u
+if [ ! -w "${AUGUSTUS_CONFIG_PATH}" ]; then
+    AUG_CONF_DIR=$( mktemp -d -p $PWD )
+    cp -r ${AUGUSTUS_CONFIG_PATH}/* $AUG_CONF_DIR
+    export AUGUSTUS_CONFIG_PATH=$AUG_CONF_DIR
+fi
+run_busco() {
+    # $1 = input glob pattern, $2 = publish dir (results)
+    mkdir -p input_seqs
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_seqs/$(basename "$f" .gz)
+    done
+    if ls input_seqs/* >/dev/null 2>&1; then
+        busco --cpu {threads} --in input_seqs --out {sample}-auto-busco --mode genome --auto-lineage
+        if [ -f {sample}-auto-busco/batch_summary.txt ]; then
+            grep -v 'Run failed; check logs' {sample}-auto-busco/batch_summary.txt > {sample}-auto-busco.batch_summary.txt
+        else
+            touch {sample}-auto-busco.batch_summary.txt
+        fi
+        mv {sample}-auto-busco/*/short_summary.*.txt . 2>/dev/null || true
+        mv {sample}-auto-busco/*/short_summary.*.json . 2>/dev/null || true
+        mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
+    else
+        touch {sample}-auto-busco.batch_summary.txt
+    fi
+    mkdir -p "$wd/$2"
+    mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
+    mv short_summary.* "$wd/$2/" 2>/dev/null || true
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/BUSCO
+mkdir -p .tmp/busco_megahit_metabinner_{sample} && cd .tmp/busco_megahit_metabinner_{sample}
+# bins (meta.refinement='unrefined')
+run_busco "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{sample}*.fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}"
+rm -rf input_seqs {sample}-auto-busco
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_busco "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/MEGAHIT-MetaBinner-{sample}*[0-9].fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}"
+cd "$wd"
+rm -rf .tmp/busco_megahit_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/busco.yaml"
+
+[[rules]]
+name = "mag_depths_megahit_metabinner"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+    "intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz",
+]
+output = ["intermediates/binning/depths/bins/MEGAHIT-MetaBinner-{sample}-binDepths.tsv"]
+depends_on = ["depths_megahit", "metabinner_bins_megahit", "split_fasta_metabinner_megahit"]
+description = "Per-bin median coverage of the MEGAHIT MetaBinner bins (upstream MAG_DEPTHS)"
+shell = """
+mkdir -p intermediates/binning/depths/bins
+bins_list=""
+for f in {config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{sample}*.fa.gz \
+         {config.out_dir}/GenomeBinning/MetaBinner/unbinned/MEGAHIT-MetaBinner-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] && bins_list="$bins_list $f"
+done
+if [ -n "$bins_list" ]; then
+    get_mag_depths.py --bins $bins_list \
+        --depths intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz \
+        --assembler MEGAHIT \
+        --id {sample} \
+        --binner MetaBinner
+else
+    touch MEGAHIT-MetaBinner-{sample}-binDepths.tsv
+fi
+mv MEGAHIT-MetaBinner-{sample}-binDepths.tsv intermediates/binning/depths/bins/
+"""
+
+[rules.resources]
+threads = 1
+memory = "16G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+[[rules]]
+name = "quast_bins_megahit_metabinner"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}-quast_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}-quast_summary.tsv",
+]
+depends_on = ["metabinner_bins_megahit", "split_fasta_metabinner_megahit"]
+description = "Per-bin metaQUAST QC of the MEGAHIT MetaBinner bins and chunks (upstream QUAST_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/quast_megahit_metabinner_{sample} && cd .tmp/quast_megahit_metabinner_{sample}
+run_quast() {
+    # $1 = input glob pattern, $2 = summary prefix, $3 = output dir name
+    mkdir -p "$3"
+    n=0
+    for f in $1; do
+        [ -e "$f" ] || continue
+        bin=$(basename "$f")
+        metaquast.py --threads {threads} --max-ref-number 0 --rna-finding --gene-finding -l "$bin" "$f" -o "$3/$bin"
+        n=$((n+1))
+    done
+    if [ "$n" -gt 0 ]; then
+        for d in $3/*; do
+            if ! [ -f "$2-quast_summary.tsv" ]; then
+                cp "$d/transposed_report.tsv" "$2-quast_summary.tsv"
+            else
+                tail -n +2 "$d/transposed_report.tsv" >> "$2-quast_summary.tsv"
+            fi
+        done
+    else
+        touch "$2-quast_summary.tsv"
+    fi
+}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/QUAST"
+# bins (meta.refinement='unrefined')
+run_quast "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{sample}*.fa.gz" "MEGAHIT-MetaBinner-unclassified-unrefined-{sample}" QUAST_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_quast "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/MEGAHIT-MetaBinner-{sample}*[0-9].fa.gz" "MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}" QUAST_chunks
+mv QUAST_bins/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv QUAST_chunks/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv *-quast_summary.tsv "$wd/{config.out_dir}/GenomeBinning/QC/"
+cd "$wd"
+rm -rf .tmp/quast_megahit_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "2G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+[[rules]]
+name = "busco_megahit_semibin2"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+]
+depends_on = ["semibin_megahit"]
+description = "BUSCO completeness of the MEGAHIT SemiBin2 bins and unbinned chunks (upstream BUSCO_BUSCO, --auto-lineage)"
+shell = """
+wd=$(pwd)
+# upstream: BUSCO_BBTOOLS_MEMORY export + augustus config fix (both no-ops
+# when the variables are unset; kept verbatim for fidelity)
+export BUSCO_BBTOOLS_MEMORY=4g
+ENV_AUGUSTUS=/opt/conda/etc/conda/activate.d/augustus.sh
+set +u
+if [ -z "${AUGUSTUS_CONFIG_PATH}" ] && [ -f "${ENV_AUGUSTUS}" ]; then
+    source "${ENV_AUGUSTUS}"
+fi
+set -u
+if [ ! -w "${AUGUSTUS_CONFIG_PATH}" ]; then
+    AUG_CONF_DIR=$( mktemp -d -p $PWD )
+    cp -r ${AUGUSTUS_CONFIG_PATH}/* $AUG_CONF_DIR
+    export AUGUSTUS_CONFIG_PATH=$AUG_CONF_DIR
+fi
+run_busco() {
+    # $1 = input glob pattern, $2 = publish dir (results)
+    mkdir -p input_seqs
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_seqs/$(basename "$f" .gz)
+    done
+    if ls input_seqs/* >/dev/null 2>&1; then
+        busco --cpu {threads} --in input_seqs --out {sample}-auto-busco --mode genome --auto-lineage
+        if [ -f {sample}-auto-busco/batch_summary.txt ]; then
+            grep -v 'Run failed; check logs' {sample}-auto-busco/batch_summary.txt > {sample}-auto-busco.batch_summary.txt
+        else
+            touch {sample}-auto-busco.batch_summary.txt
+        fi
+        mv {sample}-auto-busco/*/short_summary.*.txt . 2>/dev/null || true
+        mv {sample}-auto-busco/*/short_summary.*.json . 2>/dev/null || true
+        mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
+    else
+        touch {sample}-auto-busco.batch_summary.txt
+    fi
+    mkdir -p "$wd/$2"
+    mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
+    mv short_summary.* "$wd/$2/" 2>/dev/null || true
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/BUSCO
+mkdir -p .tmp/busco_megahit_semibin2_{sample} && cd .tmp/busco_megahit_semibin2_{sample}
+# bins (meta.refinement='unrefined')
+run_busco "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}*.fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}"
+rm -rf input_seqs {sample}-auto-busco
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_busco "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/MEGAHIT-SemiBin2-{sample}*[0-9].fa.gz" "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}"
+cd "$wd"
+rm -rf .tmp/busco_megahit_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/busco.yaml"
+
+[[rules]]
+name = "mag_depths_megahit_semibin2"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+    "intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz",
+]
+output = ["intermediates/binning/depths/bins/MEGAHIT-SemiBin2-{sample}-binDepths.tsv"]
+depends_on = ["depths_megahit", "semibin_megahit"]
+description = "Per-bin median coverage of the MEGAHIT SemiBin2 bins (upstream MAG_DEPTHS)"
+shell = """
+mkdir -p intermediates/binning/depths/bins
+bins_list=""
+for f in {config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}*.fa.gz \
+         {config.out_dir}/GenomeBinning/SemiBin2/unbinned/MEGAHIT-SemiBin2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] && bins_list="$bins_list $f"
+done
+if [ -n "$bins_list" ]; then
+    get_mag_depths.py --bins $bins_list \
+        --depths intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz \
+        --assembler MEGAHIT \
+        --id {sample} \
+        --binner SemiBin2
+else
+    touch MEGAHIT-SemiBin2-{sample}-binDepths.tsv
+fi
+mv MEGAHIT-SemiBin2-{sample}-binDepths.tsv intermediates/binning/depths/bins/
+"""
+
+[rules.resources]
+threads = 1
+memory = "16G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+[[rules]]
+name = "quast_bins_megahit_semibin2"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}-quast_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}-quast_summary.tsv",
+]
+depends_on = ["semibin_megahit"]
+description = "Per-bin metaQUAST QC of the MEGAHIT SemiBin2 bins and chunks (upstream QUAST_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/quast_megahit_semibin2_{sample} && cd .tmp/quast_megahit_semibin2_{sample}
+run_quast() {
+    # $1 = input glob pattern, $2 = summary prefix, $3 = output dir name
+    mkdir -p "$3"
+    n=0
+    for f in $1; do
+        [ -e "$f" ] || continue
+        bin=$(basename "$f")
+        metaquast.py --threads {threads} --max-ref-number 0 --rna-finding --gene-finding -l "$bin" "$f" -o "$3/$bin"
+        n=$((n+1))
+    done
+    if [ "$n" -gt 0 ]; then
+        for d in $3/*; do
+            if ! [ -f "$2-quast_summary.tsv" ]; then
+                cp "$d/transposed_report.tsv" "$2-quast_summary.tsv"
+            else
+                tail -n +2 "$d/transposed_report.tsv" >> "$2-quast_summary.tsv"
+            fi
+        done
+    else
+        touch "$2-quast_summary.tsv"
+    fi
+}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/QUAST"
+# bins (meta.refinement='unrefined')
+run_quast "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}*.fa.gz" "MEGAHIT-SemiBin2-unclassified-unrefined-{sample}" QUAST_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_quast "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/MEGAHIT-SemiBin2-{sample}*[0-9].fa.gz" "MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}" QUAST_chunks
+mv QUAST_bins/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv QUAST_chunks/* "$wd/{config.out_dir}/GenomeBinning/QC/QUAST/" 2>/dev/null || true
+mv *-quast_summary.tsv "$wd/{config.out_dir}/GenomeBinning/QC/"
+cd "$wd"
+rm -rf .tmp/quast_megahit_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "2G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/quast.yaml"
+
+# ---------------------------------------------------------------------------
+# CONCAT_BUSCO: qsv cat rowskey over every BUSCO batch summary (upstream
+# CONCAT_BUSCO_TSV with meta.id='busco' -> busco_summary.tsv)
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "concat_busco"
+input = ["{config.out_dir}/GenomeBinning/QC/BUSCO"]
+output = ["{config.out_dir}/GenomeBinning/QC/busco_summary.tsv"]
+depends_on = [
+    "busco_spades_metabat2",
+    "busco_spades_maxbin2",
+    "busco_spades_concoct",
+    "busco_spades_comebin",
+    "busco_spades_metabinner",
+    "busco_spades_semibin2",
+    "busco_megahit_metabat2",
+    "busco_megahit_maxbin2",
+    "busco_megahit_concoct",
+    "busco_megahit_comebin",
+    "busco_megahit_metabinner",
+    "busco_megahit_semibin2"
+]
+description = "Concatenate all BUSCO batch summaries (upstream CONCAT_BUSCO_TSV, qsv cat rowskey)"
+shell = """
+export QSV_SKIP_FORMAT_CHECK=1
+mkdir -p {config.out_dir}/GenomeBinning/QC
+if ls {config.out_dir}/GenomeBinning/QC/BUSCO/*/*.batch_summary.txt >/dev/null 2>&1; then
+    qsv cat rowskey --delimiter '\t' -o busco_summary.tsv {config.out_dir}/GenomeBinning/QC/BUSCO/*/*.batch_summary.txt
+else
+    touch busco_summary.tsv
+fi
+mv busco_summary.tsv {config.out_dir}/GenomeBinning/QC/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/qsv.yaml"
+
+# ---------------------------------------------------------------------------
+# MAG_DEPTHS_SUMMARY: combine the per-group binDepths tables into one
+# bin_depths_summary.tsv (upstream MAG_DEPTHS_SUMMARY)
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "mag_depths_summary"
+input = ["intermediates/binning/depths/bins"]
+output = ["{config.out_dir}/GenomeBinning/depths/bins/bin_depths_summary.tsv"]
+depends_on = [
+    "mag_depths_spades_metabat2",
+    "mag_depths_spades_maxbin2",
+    "mag_depths_spades_concoct",
+    "mag_depths_spades_comebin",
+    "mag_depths_spades_metabinner",
+    "mag_depths_spades_semibin2",
+    "mag_depths_megahit_metabat2",
+    "mag_depths_megahit_maxbin2",
+    "mag_depths_megahit_concoct",
+    "mag_depths_megahit_comebin",
+    "mag_depths_megahit_metabinner",
+    "mag_depths_megahit_semibin2"
+]
+description = "Combine all per-group bin depth tables (upstream MAG_DEPTHS_SUMMARY)"
+shell = """
+mkdir -p {config.out_dir}/GenomeBinning/depths/bins
+if ls intermediates/binning/depths/bins/*-binDepths.tsv >/dev/null 2>&1; then
+    get_mag_depths_summary.py --depths intermediates/binning/depths/bins/*-binDepths.tsv \
+        --out bin_depths_summary.tsv
+else
+    touch bin_depths_summary.tsv
+fi
+mv bin_depths_summary.tsv {config.out_dir}/GenomeBinning/depths/bins/
+"""
+
+[rules.resources]
+threads = 1
+memory = "7G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mag_depths_summary.yaml"
+
+# ---------------------------------------------------------------------------
+# CONCAT_QUAST: qsv cat rowskey over every per-group QUAST bin summary
+# (upstream CONCAT_QUAST_SUMMARY with meta.id='quast_bin_summary')
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "concat_quast"
+input = ["{config.out_dir}/GenomeBinning/QC"]
+output = ["{config.out_dir}/GenomeBinning/QC/quast_bin_summary.tsv"]
+depends_on = [
+    "quast_bins_spades_metabat2",
+    "quast_bins_spades_maxbin2",
+    "quast_bins_spades_concoct",
+    "quast_bins_spades_comebin",
+    "quast_bins_spades_metabinner",
+    "quast_bins_spades_semibin2",
+    "quast_bins_megahit_metabat2",
+    "quast_bins_megahit_maxbin2",
+    "quast_bins_megahit_concoct",
+    "quast_bins_megahit_comebin",
+    "quast_bins_megahit_metabinner",
+    "quast_bins_megahit_semibin2"
+]
+description = "Concatenate all per-group QUAST bin summaries (upstream CONCAT_QUAST_SUMMARY, qsv cat rowskey)"
+shell = """
+export QSV_SKIP_FORMAT_CHECK=1
+mkdir -p {config.out_dir}/GenomeBinning/QC
+if ls {config.out_dir}/GenomeBinning/QC/*-quast_summary.tsv >/dev/null 2>&1; then
+    qsv cat rowskey --delimiter '\t' -o quast_bin_summary.tsv {config.out_dir}/GenomeBinning/QC/*-quast_summary.tsv
+else
+    touch quast_bin_summary.tsv
+fi
+mv quast_bin_summary.tsv {config.out_dir}/GenomeBinning/QC/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/qsv.yaml"
+
+# ---------------------------------------------------------------------------
+# ALE (nf-core ALE module; ext.prefix {id}-{assembler}, ext.args
+# '--metagenome --nout' at default; publish results/Assembly/{assembler}/QC/{id}/ALE)
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "ale_spades"
+input = [
+    "intermediates/binning/alignments/SPAdes",
+    "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa.gz",
+]
+output = ["{config.out_dir}/Assembly/SPAdes/QC/{sample}/ALE/{sample}-SPAdes_ALEoutput.txt"]
+depends_on = ["bowtie2_align_spades", "spades"]
+description = "Assembly Likelihood Evaluation of the SPAdes assembly (upstream ALE on the own-readset alignment)"
+shell = """
+mkdir -p {config.out_dir}/Assembly/SPAdes/QC/{sample}/ALE
+# upstream picks the alignment whose reads match the assembly sample
+# (bam.name.endsWith('-{meta.id}.bam')); with group binning the loop above
+# produced exactly one such file
+own_bam=$(LC_ALL=C ls intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam)
+ALE --metagenome --nout "$own_bam" intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa.gz \
+    {sample}-SPAdes_ALEoutput.txt
+mv {sample}-SPAdes_ALEoutput.txt {config.out_dir}/Assembly/SPAdes/QC/{sample}/ALE/
+"""
+
+[rules.resources]
+threads = 1
+memory = "18G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/ale.yaml"
+
+[[rules]]
+name = "ale_megahit"
+input = [
+    "intermediates/binning/alignments/MEGAHIT",
+    "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa.gz",
+]
+output = ["{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/ALE/{sample}-MEGAHIT_ALEoutput.txt"]
+depends_on = ["bowtie2_align_megahit", "megahit"]
+description = "Assembly Likelihood Evaluation of the MEGAHIT assembly (upstream ALE on the own-readset alignment)"
+shell = """
+mkdir -p {config.out_dir}/Assembly/MEGAHIT/QC/{sample}/ALE
+own_bam=$(LC_ALL=C ls intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam)
+ALE --metagenome --nout "$own_bam" intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa.gz \
+    {sample}-MEGAHIT_ALEoutput.txt
+mv {sample}-MEGAHIT_ALEoutput.txt {config.out_dir}/Assembly/MEGAHIT/QC/{sample}/ALE/
+"""
+
+[rules.resources]
+threads = 1
+memory = "18G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/ale.yaml"

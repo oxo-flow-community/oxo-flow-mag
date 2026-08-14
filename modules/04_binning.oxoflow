@@ -1,0 +1,1754 @@
+[workflow]
+name = "04_binning"
+description = "nf-core/mag 5.5.0 04_binning fragment"
+# ---------------------------------------------------------------------------
+# BINNING (nf-core/mag 5.5.0 default path): JGI depths per assembly ->
+# convert (bioawk .abund files for MaxBin2) -> six binners (MetaBAT2,
+# MaxBin2, CONCOCT, COMEBin, MetaBinner, SemiBin2) per assembly ->
+# seqkit stats (bin length QC; the bin_min_size/bin_max_size filter is a
+# no-op at defaults and not ported) -> split_fasta (unbinned contig chunks
+# of MetaBAT2/MaxBin2/MetaBinner, published to {binner}/unbinned/).
+#
+# Bins are published into results/GenomeBinning/{binner}/bins/ with the
+# upstream bin name prefixes {assembler}-{binner}-{sample}; downstream QC
+# rules glob these paths. oxo-flow has no {assembler} wildcard, so every
+# per-assembler process is one rule per assembler (_spades/_megahit).
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# DEPTHS: JGI summarize per assembly (label process_medium)
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "depths_spades"
+input = ["intermediates/binning/alignments/SPAdes"]
+output = [
+    "intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz",
+    "{config.out_dir}/GenomeBinning/depths/contigs/SPAdes-{sample}-depth.txt.gz",
+]
+depends_on = ["bowtie2_align_spades"]
+description = "Per-contig depths of the cohort bams against the SPAdes assembly (upstream METABAT2_JGISUMMARIZEBAMCONTIGDEPTHS_SHORTREAD)"
+shell = """
+export OMP_NUM_THREADS={threads}
+mkdir -p intermediates/binning/depths {config.out_dir}/GenomeBinning/depths/contigs
+# bams are globbed in sorted order so depth column order is deterministic
+bams=$(LC_ALL=C ls intermediates/binning/alignments/SPAdes/SPAdes-{sample}-*.bam)
+jgi_summarize_bam_contig_depths --outputDepth SPAdes-{sample}-depth.txt $bams
+bgzip --threads {threads} SPAdes-{sample}-depth.txt
+mv SPAdes-{sample}-depth.txt.gz intermediates/binning/depths/
+cp intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz {config.out_dir}/GenomeBinning/depths/contigs/
+"""
+
+[rules.resources]
+threads = 6
+memory = "36G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+[[rules]]
+name = "depths_megahit"
+input = ["intermediates/binning/alignments/MEGAHIT"]
+output = [
+    "intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz",
+    "{config.out_dir}/GenomeBinning/depths/contigs/MEGAHIT-{sample}-depth.txt.gz",
+]
+depends_on = ["bowtie2_align_megahit"]
+description = "Per-contig depths of the cohort bams against the MEGAHIT assembly (upstream METABAT2_JGISUMMARIZEBAMCONTIGDEPTHS_SHORTREAD)"
+shell = """
+export OMP_NUM_THREADS={threads}
+mkdir -p intermediates/binning/depths {config.out_dir}/GenomeBinning/depths/contigs
+bams=$(LC_ALL=C ls intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-*.bam)
+jgi_summarize_bam_contig_depths --outputDepth MEGAHIT-{sample}-depth.txt $bams
+bgzip --threads {threads} MEGAHIT-{sample}-depth.txt
+mv MEGAHIT-{sample}-depth.txt.gz intermediates/binning/depths/
+cp intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz {config.out_dir}/GenomeBinning/depths/contigs/
+"""
+
+[rules.resources]
+threads = 6
+memory = "36G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+# ---------------------------------------------------------------------------
+# CONVERT_DEPTHS: one .abund file per read set (input for MaxBin2)
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "convert_depths_spades"
+input = ["intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz"]
+output = ["intermediates/binning/maxbin2_abund/SPAdes"]
+depends_on = ["depths_spades"]
+description = "Split the SPAdes depth table into per-read-set abundance files for MaxBin2 (upstream CONVERT_DEPTHS)"
+shell = """
+wd=$(pwd)
+# run in a per-sample scratch dir: the bioawk one-pass split writes generic
+# *.abund names, and with a shared working directory concurrent samples
+# would race on the unguarded `mv *.abund` (move each other's files / fail)
+mkdir -p .tmp/convert_depths_spades_{sample} && cd .tmp/convert_depths_spades_{sample}
+mkdir -p "$wd/intermediates/binning/maxbin2_abund/SPAdes"
+# upstream bioawk one-pass split; column headers are <assembler>-<id>-<readset>.bam
+gzip -cd "$wd/{input[0]}" | bioawk -t '
+NR == 1 {
+    n_abund = int((NF - 3) / 2)
+    for (i = 1; i <= n_abund; i++) {
+        name = $(i * 2 + 2)
+        sub(/\\.bam$/, "", name)
+        abund[i] = name ".abund"
+    }
+    next
+}
+{
+    for (i = 1; i <= n_abund; i++) {
+        print $1, $(i * 2 + 2) > (abund[i])
+    }
+}
+'
+for f in SPAdes-{sample}-*.abund; do
+    [ -e "$f" ] && mv "$f" "$wd/intermediates/binning/maxbin2_abund/SPAdes/"
+done
+cd "$wd"
+rm -rf .tmp/convert_depths_spades_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "7G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/bioawk.yaml"
+
+[[rules]]
+name = "convert_depths_megahit"
+input = ["intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz"]
+output = ["intermediates/binning/maxbin2_abund/MEGAHIT"]
+depends_on = ["depths_megahit"]
+description = "Split the MEGAHIT depth table into per-read-set abundance files for MaxBin2 (upstream CONVERT_DEPTHS)"
+shell = """
+wd=$(pwd)
+# see convert_depths_spades
+mkdir -p .tmp/convert_depths_megahit_{sample} && cd .tmp/convert_depths_megahit_{sample}
+mkdir -p "$wd/intermediates/binning/maxbin2_abund/MEGAHIT"
+gzip -cd "$wd/{input[0]}" | bioawk -t '
+NR == 1 {
+    n_abund = int((NF - 3) / 2)
+    for (i = 1; i <= n_abund; i++) {
+        name = $(i * 2 + 2)
+        sub(/\\.bam$/, "", name)
+        abund[i] = name ".abund"
+    }
+    next
+}
+{
+    for (i = 1; i <= n_abund; i++) {
+        print $1, $(i * 2 + 2) > (abund[i])
+    }
+}
+'
+for f in MEGAHIT-{sample}-*.abund; do
+    [ -e "$f" ] && mv "$f" "$wd/intermediates/binning/maxbin2_abund/MEGAHIT/"
+done
+cd "$wd"
+rm -rf .tmp/convert_depths_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "7G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/bioawk.yaml"
+
+# ---------------------------------------------------------------------------
+# METABAT2 (label process_medium + 8 cpu/20GB/8h override)
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "metabat2_spades"
+input = [
+    "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
+    "intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz",
+]
+output = [
+    "intermediates/binning/metabat2/{sample}/SPAdes-MetaBAT2-{sample}.unbinned.fa.gz",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/discarded",
+]
+depends_on = ["depths_spades"]
+description = "Binning of the SPAdes assembly with MetaBAT2 (upstream METABAT2_METABAT2)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/metabat2_spades_{sample} && cd .tmp/metabat2_spades_{sample}
+mkdir input_bins
+ln -sf "$wd/{input[0]}" input_bins/SPAdes-{sample}.scaffolds.fa
+ln -sf "$wd/{input[1]}" depth.txt.gz
+gzip -d -f depth.txt.gz
+prefix=SPAdes-MetaBAT2-{sample}
+# upstream clamps -m to 1500 (conf/modules.config METABAT2_METABAT2 ext.args)
+mcs=$([ "{config.min_contig_size}" -lt 1500 ] && echo 1500 || echo "{config.min_contig_size}")
+metabat2 \\
+    -m $mcs \\
+    --unbinned \\
+    --seed {config.metabat_rng_seed} \\
+    -i input_bins \\
+    -a depth.txt \\
+    -t {threads} \\
+    --saveCls \\
+    -o $prefix
+gzip -cn $prefix > $prefix.tsv.gz
+find . -maxdepth 1 -name "*.fa" -type f | xargs -t -n 1 bgzip -@ {threads}
+mkdir -p "$wd/intermediates/binning/metabat2/{sample}" \\
+         "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins" \\
+         "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/discarded"
+# upstream publishes tooShort/lowDepth to MetaBAT2/discarded/
+for f in $prefix.tooShort.fa.gz $prefix.lowDepth.fa.gz; do
+    [ -e "$f" ] && mv "$f" "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/discarded/"
+done
+mv $prefix.unbinned.fa.gz "$wd/intermediates/binning/metabat2/{sample}/"
+mv $prefix.tsv.gz "$wd/intermediates/binning/metabat2/{sample}/"
+for f in $prefix.*.fa.gz; do
+    [ -e "$f" ] && mv "$f" "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/"
+done
+cd "$wd"
+rm -rf .tmp/metabat2_spades_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "20G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/metabat2.yaml"
+
+[[rules]]
+name = "metabat2_megahit"
+input = [
+    "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa",
+    "intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz",
+]
+output = [
+    "intermediates/binning/metabat2/{sample}/MEGAHIT-MetaBAT2-{sample}.unbinned.fa.gz",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/discarded",
+]
+depends_on = ["depths_megahit"]
+description = "Binning of the MEGAHIT assembly with MetaBAT2 (upstream METABAT2_METABAT2)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/metabat2_megahit_{sample} && cd .tmp/metabat2_megahit_{sample}
+mkdir input_bins
+ln -sf "$wd/{input[0]}" input_bins/MEGAHIT-{sample}.contigs.fa
+ln -sf "$wd/{input[1]}" depth.txt.gz
+gzip -d -f depth.txt.gz
+prefix=MEGAHIT-MetaBAT2-{sample}
+# upstream clamps -m to 1500 (conf/modules.config METABAT2_METABAT2 ext.args)
+mcs=$([ "{config.min_contig_size}" -lt 1500 ] && echo 1500 || echo "{config.min_contig_size}")
+metabat2 \\
+    -m $mcs \\
+    --unbinned \\
+    --seed {config.metabat_rng_seed} \\
+    -i input_bins \\
+    -a depth.txt \\
+    -t {threads} \\
+    --saveCls \\
+    -o $prefix
+gzip -cn $prefix > $prefix.tsv.gz
+find . -maxdepth 1 -name "*.fa" -type f | xargs -t -n 1 bgzip -@ {threads}
+mkdir -p "$wd/intermediates/binning/metabat2/{sample}" \\
+         "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins" \\
+         "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/discarded"
+# upstream publishes tooShort/lowDepth to MetaBAT2/discarded/
+for f in $prefix.tooShort.fa.gz $prefix.lowDepth.fa.gz; do
+    [ -e "$f" ] && mv "$f" "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/discarded/"
+done
+mv $prefix.unbinned.fa.gz "$wd/intermediates/binning/metabat2/{sample}/"
+mv $prefix.tsv.gz "$wd/intermediates/binning/metabat2/{sample}/"
+for f in $prefix.*.fa.gz; do
+    [ -e "$f" ] && mv "$f" "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/"
+done
+cd "$wd"
+rm -rf .tmp/metabat2_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "20G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/metabat2.yaml"
+
+# ---------------------------------------------------------------------------
+# MAXBIN2 (label process_medium; prefix {assembler}-MaxBin2-{id})
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "maxbin2_spades"
+input = [
+    "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
+    "intermediates/binning/maxbin2_abund/SPAdes",
+]
+output = [
+    "intermediates/binning/maxbin2/{sample}/SPAdes-MaxBin2-{sample}.noclass.gz",
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/discarded",
+]
+depends_on = ["convert_depths_spades"]
+description = "Binning of the SPAdes assembly with MaxBin2 (upstream MAXBIN2)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/maxbin2_spades_{sample} && cd .tmp/maxbin2_spades_{sample}
+mkdir input/
+ln -sf "$wd/{input[0]}" input/SPAdes-{sample}.scaffolds.fa
+prefix=SPAdes-MaxBin2-{sample}
+# one -abund{n} arg per read set, in sorted (deterministic) order; the first
+# gets the bare -abund form (upstream builds 1..n)
+abund_args=""
+n=0
+for f in $(LC_ALL=C ls "$wd/intermediates/binning/maxbin2_abund/SPAdes/SPAdes-{sample}-"*.abund); do
+    n=$((n + 1))
+    if [ "$n" -eq 1 ]; then
+        abund_args="-abund $f"
+    else
+        abund_args="$abund_args -abund${n} $f"
+    fi
+done
+run_MaxBin.pl \\
+    -contig input/SPAdes-{sample}.scaffolds.fa \\
+    $abund_args \\
+    -thread {threads} \\
+    -out $prefix
+gzip *.fasta *.noclass *.tooshort *log *.marker
+for file in *.fasta.gz; do
+    mv "$file" "${file%.fasta.gz}.fa.gz"
+done
+mkdir -p "$wd/intermediates/binning/maxbin2/{sample}" \\
+         "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins" \\
+         "$wd/{config.out_dir}/GenomeBinning/MaxBin2/discarded"
+mv $prefix.noclass.gz "$wd/intermediates/binning/maxbin2/{sample}/"
+mv $prefix.tooshort.gz "$wd/{config.out_dir}/GenomeBinning/MaxBin2/discarded/"
+mv $prefix.summary "$wd/{config.out_dir}/GenomeBinning/MaxBin2/"
+for f in $prefix.*.fa.gz; do
+    [ -e "$f" ] && mv "$f" "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/"
+done
+cd "$wd"
+rm -rf .tmp/maxbin2_spades_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "36G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/maxbin2.yaml"
+
+[[rules]]
+name = "maxbin2_megahit"
+input = [
+    "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa",
+    "intermediates/binning/maxbin2_abund/MEGAHIT",
+]
+output = [
+    "intermediates/binning/maxbin2/{sample}/MEGAHIT-MaxBin2-{sample}.noclass.gz",
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/discarded",
+]
+depends_on = ["convert_depths_megahit"]
+description = "Binning of the MEGAHIT assembly with MaxBin2 (upstream MAXBIN2)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/maxbin2_megahit_{sample} && cd .tmp/maxbin2_megahit_{sample}
+mkdir input/
+ln -sf "$wd/{input[0]}" input/MEGAHIT-{sample}.contigs.fa
+prefix=MEGAHIT-MaxBin2-{sample}
+abund_args=""
+n=0
+for f in $(LC_ALL=C ls "$wd/intermediates/binning/maxbin2_abund/MEGAHIT/MEGAHIT-{sample}-"*.abund); do
+    n=$((n + 1))
+    if [ "$n" -eq 1 ]; then
+        abund_args="-abund $f"
+    else
+        abund_args="$abund_args -abund${n} $f"
+    fi
+done
+run_MaxBin.pl \\
+    -contig input/MEGAHIT-{sample}.contigs.fa \\
+    $abund_args \\
+    -thread {threads} \\
+    -out $prefix
+gzip *.fasta *.noclass *.tooshort *log *.marker
+for file in *.fasta.gz; do
+    mv "$file" "${file%.fasta.gz}.fa.gz"
+done
+mkdir -p "$wd/intermediates/binning/maxbin2/{sample}" \\
+         "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins" \\
+         "$wd/{config.out_dir}/GenomeBinning/MaxBin2/discarded"
+mv $prefix.noclass.gz "$wd/intermediates/binning/maxbin2/{sample}/"
+mv $prefix.tooshort.gz "$wd/{config.out_dir}/GenomeBinning/MaxBin2/discarded/"
+mv $prefix.summary "$wd/{config.out_dir}/GenomeBinning/MaxBin2/"
+for f in $prefix.*.fa.gz; do
+    [ -e "$f" ] && mv "$f" "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/"
+done
+cd "$wd"
+rm -rf .tmp/maxbin2_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "36G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/maxbin2.yaml"
+
+# ---------------------------------------------------------------------------
+# CONCOCT (5 upstream processes per assembly; prefix {assembler}-CONCOCT-{id})
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "concoct_cutup_spades"
+input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
+output = [
+    "intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.fasta",
+    "intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.bed",
+]
+description = "Cut the SPAdes assembly into chunks (upstream CONCOCT_CUTUPFASTA)"
+shell = """
+mkdir -p intermediates/binning/concoct/{sample}
+cut_up_fasta.py \\
+    {input[0]} \\
+    -c {config.bin_concoct_chunksize} \\
+    -o {config.bin_concoct_overlap} \\
+    --merge_last \\
+    -b SPAdes-CONCOCT-{sample}.bed \\
+    > SPAdes-CONCOCT-{sample}.fasta
+mv SPAdes-CONCOCT-{sample}.fasta SPAdes-CONCOCT-{sample}.bed intermediates/binning/concoct/{sample}/
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/concoct.yaml"
+
+[[rules]]
+name = "concoct_cutup_megahit"
+input = ["intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa"]
+output = [
+    "intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}.fasta",
+    "intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}.bed",
+]
+description = "Cut the MEGAHIT assembly into chunks (upstream CONCOCT_CUTUPFASTA)"
+shell = """
+mkdir -p intermediates/binning/concoct/{sample}
+cut_up_fasta.py \\
+    {input[0]} \\
+    -c {config.bin_concoct_chunksize} \\
+    -o {config.bin_concoct_overlap} \\
+    --merge_last \\
+    -b MEGAHIT-CONCOCT-{sample}.bed \\
+    > MEGAHIT-CONCOCT-{sample}.fasta
+mv MEGAHIT-CONCOCT-{sample}.fasta MEGAHIT-CONCOCT-{sample}.bed intermediates/binning/concoct/{sample}/
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/concoct.yaml"
+
+[[rules]]
+name = "concoct_table_spades"
+input = [
+    "intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.bed",
+    "intermediates/binning/alignments/SPAdes",
+]
+output = ["intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.tsv"]
+depends_on = ["concoct_cutup_spades", "bowtie2_align_spades"]
+description = "Coverage table of the cohort bams on the cut SPAdes contigs (upstream CONCOCT_CONCOCTCOVERAGETABLE)"
+shell = """
+bams=$(LC_ALL=C ls intermediates/binning/alignments/SPAdes/SPAdes-{sample}-*.bam)
+concoct_coverage_table.py \\
+    intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.bed \\
+    $bams \\
+    > SPAdes-CONCOCT-{sample}.tsv
+mv SPAdes-CONCOCT-{sample}.tsv intermediates/binning/concoct/{sample}/
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/concoct.yaml"
+
+[[rules]]
+name = "concoct_table_megahit"
+input = [
+    "intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}.bed",
+    "intermediates/binning/alignments/MEGAHIT",
+]
+output = ["intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}.tsv"]
+depends_on = ["concoct_cutup_megahit", "bowtie2_align_megahit"]
+description = "Coverage table of the cohort bams on the cut MEGAHIT contigs (upstream CONCOCT_CONCOCTCOVERAGETABLE)"
+shell = """
+bams=$(LC_ALL=C ls intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-*.bam)
+concoct_coverage_table.py \\
+    intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}.bed \\
+    $bams \\
+    > MEGAHIT-CONCOCT-{sample}.tsv
+mv MEGAHIT-CONCOCT-{sample}.tsv intermediates/binning/concoct/{sample}/
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/concoct.yaml"
+
+[[rules]]
+name = "concoct_spades"
+input = [
+    "intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.tsv",
+    "intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.fasta",
+]
+output = ["intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}_clustering_gt1000.csv"]
+depends_on = ["concoct_table_spades"]
+description = "Clustering of the cut SPAdes contigs (upstream CONCOCT_CONCOCT)"
+shell = """
+concoct \\
+    --threads {threads} \\
+    --coverage_file intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.tsv \\
+    --composition_file intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.fasta \\
+    -b SPAdes-CONCOCT-{sample}
+mv SPAdes-CONCOCT-{sample}_clustering_gt1000.csv intermediates/binning/concoct/{sample}/
+"""
+
+[rules.resources]
+threads = 12
+memory = "24G"
+time_limit = "16h"
+
+[rules.environment]
+conda = "envs/concoct.yaml"
+
+[[rules]]
+name = "concoct_megahit"
+input = [
+    "intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}.tsv",
+    "intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}.fasta",
+]
+output = ["intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}_clustering_gt1000.csv"]
+depends_on = ["concoct_table_megahit"]
+description = "Clustering of the cut MEGAHIT contigs (upstream CONCOCT_CONCOCT)"
+shell = """
+concoct \\
+    --threads {threads} \\
+    --coverage_file intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}.tsv \\
+    --composition_file intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}.fasta \\
+    -b MEGAHIT-CONCOCT-{sample}
+mv MEGAHIT-CONCOCT-{sample}_clustering_gt1000.csv intermediates/binning/concoct/{sample}/
+"""
+
+[rules.resources]
+threads = 12
+memory = "24G"
+time_limit = "16h"
+
+[rules.environment]
+conda = "envs/concoct.yaml"
+
+[[rules]]
+name = "concoct_merge_spades"
+input = ["intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}_clustering_gt1000.csv"]
+output = [
+    "intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.csv",
+    "{config.out_dir}/GenomeBinning/CONCOCT/stats",
+]
+depends_on = ["concoct_spades"]
+description = "Merge the cut-up SPAdes clustering (upstream CONCOCT_MERGECUTUPCLUSTERING)"
+shell = """
+wd=$(pwd)
+merge_cutup_clustering.py \\
+    intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}_clustering_gt1000.csv \\
+    > SPAdes-CONCOCT-{sample}.csv
+mv SPAdes-CONCOCT-{sample}.csv intermediates/binning/concoct/{sample}/
+# upstream publishes every CONCOCT *.{txt,csv,tsv} artifact to CONCOCT/stats/
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/CONCOCT/stats"
+for s in SPAdes-CONCOCT-{sample}_clustering_gt1000.csv SPAdes-CONCOCT-{sample}.csv SPAdes-CONCOCT-{sample}.tsv; do
+    [ -e "intermediates/binning/concoct/{sample}/$s" ] && cp "intermediates/binning/concoct/{sample}/$s" "$wd/{config.out_dir}/GenomeBinning/CONCOCT/stats/"
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/concoct.yaml"
+
+[[rules]]
+name = "concoct_merge_megahit"
+input = ["intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}_clustering_gt1000.csv"]
+output = [
+    "intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}.csv",
+    "{config.out_dir}/GenomeBinning/CONCOCT/stats",
+]
+depends_on = ["concoct_megahit"]
+description = "Merge the cut-up MEGAHIT clustering (upstream CONCOCT_MERGECUTUPCLUSTERING)"
+shell = """
+wd=$(pwd)
+merge_cutup_clustering.py \\
+    intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}_clustering_gt1000.csv \\
+    > MEGAHIT-CONCOCT-{sample}.csv
+mv MEGAHIT-CONCOCT-{sample}.csv intermediates/binning/concoct/{sample}/
+# upstream publishes every CONCOCT *.{txt,csv,tsv} artifact to CONCOCT/stats/
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/CONCOCT/stats"
+for s in MEGAHIT-CONCOCT-{sample}_clustering_gt1000.csv MEGAHIT-CONCOCT-{sample}.csv MEGAHIT-CONCOCT-{sample}.tsv; do
+    [ -e "intermediates/binning/concoct/{sample}/$s" ] && cp "intermediates/binning/concoct/{sample}/$s" "$wd/{config.out_dir}/GenomeBinning/CONCOCT/stats/"
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/concoct.yaml"
+
+[[rules]]
+name = "concoct_extract_spades"
+input = [
+    "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
+    "intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.csv",
+]
+output = ["{config.out_dir}/GenomeBinning/CONCOCT/bins"]
+depends_on = ["concoct_merge_spades"]
+description = "Extract the SPAdes CONCOCT bins (upstream CONCOCT_EXTRACTFASTABINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/concoct_spades_{sample} && cd .tmp/concoct_spades_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa
+prefix=SPAdes-CONCOCT-{sample}
+extract_fasta_bins.py \\
+    assembly.fa \\
+    "$wd/intermediates/binning/concoct/{sample}/$prefix.csv" \\
+    --output_path $prefix
+for i in $prefix/*.fa; do
+    mv "$i" "$(basename "$i")"
+    gzip "$(basename "$i")"
+done
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins"
+mv ${prefix}_*.fa.gz "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/"
+cd "$wd"
+rm -rf .tmp/concoct_spades_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/concoct.yaml"
+
+[[rules]]
+name = "concoct_extract_megahit"
+input = [
+    "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa",
+    "intermediates/binning/concoct/{sample}/MEGAHIT-CONCOCT-{sample}.csv",
+]
+output = ["{config.out_dir}/GenomeBinning/CONCOCT/bins"]
+depends_on = ["concoct_merge_megahit"]
+description = "Extract the MEGAHIT CONCOCT bins (upstream CONCOCT_EXTRACTFASTABINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/concoct_megahit_{sample} && cd .tmp/concoct_megahit_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa
+prefix=MEGAHIT-CONCOCT-{sample}
+extract_fasta_bins.py \\
+    assembly.fa \\
+    "$wd/intermediates/binning/concoct/{sample}/$prefix.csv" \\
+    --output_path $prefix
+for i in $prefix/*.fa; do
+    mv "$i" "$(basename "$i")"
+    gzip "$(basename "$i")"
+done
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins"
+mv ${prefix}_*.fa.gz "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/"
+cd "$wd"
+rm -rf .tmp/concoct_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/concoct.yaml"
+
+# ---------------------------------------------------------------------------
+# COMEBIN (label process_high; prefix {assembler}-COMEBin-{id})
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "comebin_spades"
+input = [
+    "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
+    "intermediates/binning/alignments/SPAdes",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/stats",
+]
+depends_on = ["bowtie2_align_spades"]
+description = "Binning of the SPAdes assembly with COMEBin (upstream COMEBIN_RUNCOMEBIN)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/comebin_spades_{sample} && cd .tmp/comebin_spades_{sample}
+cat "$wd/{input[0]}" > local_assembly.fasta
+mkdir bam/
+for b in "$wd"/intermediates/binning/alignments/SPAdes/SPAdes-{sample}-*.bam; do
+    ln -sf "$b" bam/$(basename "$b")
+done
+prefix=SPAdes-COMEBin-{sample}
+run_comebin.sh \\
+    -t {threads} \\
+    -a local_assembly.fasta \\
+    -p bam/ \\
+    -o .
+mv comebin_res $prefix
+find $prefix/comebin_res_bins/*.fa -exec gzip {} +
+for filename in $prefix/comebin_res_bins/*.fa.gz; do
+    mv "$filename" "$prefix/comebin_res_bins/$prefix.$(basename "$filename")"
+done
+rm local_assembly.fasta
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins" "$wd/{config.out_dir}/GenomeBinning/COMEBin/stats"
+mv $prefix/comebin_res_bins/*.fa.gz "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/"
+mv $prefix/comebin_res.tsv $prefix/comebin.log "$wd/{config.out_dir}/GenomeBinning/COMEBin/stats/"
+cd "$wd"
+rm -rf .tmp/comebin_spades_{sample}
+"""
+
+[rules.resources]
+threads = 12
+memory = "72G"
+time_limit = "16h"
+
+[rules.environment]
+conda = "envs/comebin.yaml"
+
+[[rules]]
+name = "comebin_megahit"
+input = [
+    "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa",
+    "intermediates/binning/alignments/MEGAHIT",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/stats",
+]
+depends_on = ["bowtie2_align_megahit"]
+description = "Binning of the MEGAHIT assembly with COMEBin (upstream COMEBIN_RUNCOMEBIN)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/comebin_megahit_{sample} && cd .tmp/comebin_megahit_{sample}
+cat "$wd/{input[0]}" > local_assembly.fasta
+mkdir bam/
+for b in "$wd"/intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-*.bam; do
+    ln -sf "$b" bam/$(basename "$b")
+done
+prefix=MEGAHIT-COMEBin-{sample}
+run_comebin.sh \\
+    -t {threads} \\
+    -a local_assembly.fasta \\
+    -p bam/ \\
+    -o .
+mv comebin_res $prefix
+find $prefix/comebin_res_bins/*.fa -exec gzip {} +
+for filename in $prefix/comebin_res_bins/*.fa.gz; do
+    mv "$filename" "$prefix/comebin_res_bins/$prefix.$(basename "$filename")"
+done
+rm local_assembly.fasta
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins" "$wd/{config.out_dir}/GenomeBinning/COMEBin/stats"
+mv $prefix/comebin_res_bins/*.fa.gz "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/"
+mv $prefix/comebin_res.tsv $prefix/comebin.log "$wd/{config.out_dir}/GenomeBinning/COMEBin/stats/"
+cd "$wd"
+rm -rf .tmp/comebin_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 12
+memory = "72G"
+time_limit = "16h"
+
+[rules.environment]
+conda = "envs/comebin.yaml"
+
+# ---------------------------------------------------------------------------
+# METABINNER (4 upstream processes per assembly; prefix {assembler}-MetaBinner-{id})
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "metabinner_kmer_spades"
+input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
+output = ["intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}_kmer_4_f{config.min_contig_size}.csv.gz"]
+description = "4-mer composition profile of the SPAdes assembly (upstream METABINNER_KMER)"
+shell = """
+mkdir -p intermediates/binning/metabinner/{sample}
+wd=$(pwd)
+mkdir -p .tmp/mb_kmer_spades_{sample} && cd .tmp/mb_kmer_spades_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa
+metabinner_path=$(dirname $(which run_metabinner.sh))
+python $metabinner_path/scripts/gen_kmer.py assembly.fa {config.min_contig_size} 4
+gzip -cn assembly_kmer_4_f{config.min_contig_size}.csv > SPAdes-MetaBinner-{sample}_kmer_4_f{config.min_contig_size}.csv.gz
+mv SPAdes-MetaBinner-{sample}_kmer_4_f{config.min_contig_size}.csv.gz "$wd/intermediates/binning/metabinner/{sample}/"
+cd "$wd"
+rm -rf .tmp/mb_kmer_spades_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/metabinner.yaml"
+
+[[rules]]
+name = "metabinner_kmer_megahit"
+input = ["intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa"]
+output = ["intermediates/binning/metabinner/{sample}/MEGAHIT-MetaBinner-{sample}_kmer_4_f{config.min_contig_size}.csv.gz"]
+description = "4-mer composition profile of the MEGAHIT assembly (upstream METABINNER_KMER)"
+shell = """
+mkdir -p intermediates/binning/metabinner/{sample}
+wd=$(pwd)
+mkdir -p .tmp/mb_kmer_megahit_{sample} && cd .tmp/mb_kmer_megahit_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa
+metabinner_path=$(dirname $(which run_metabinner.sh))
+python $metabinner_path/scripts/gen_kmer.py assembly.fa {config.min_contig_size} 4
+gzip -cn assembly_kmer_4_f{config.min_contig_size}.csv > MEGAHIT-MetaBinner-{sample}_kmer_4_f{config.min_contig_size}.csv.gz
+mv MEGAHIT-MetaBinner-{sample}_kmer_4_f{config.min_contig_size}.csv.gz "$wd/intermediates/binning/metabinner/{sample}/"
+cd "$wd"
+rm -rf .tmp/mb_kmer_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/metabinner.yaml"
+
+[[rules]]
+name = "metabinner_tooshort_spades"
+input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
+output = ["intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}.{config.min_contig_size}.fa"]
+description = "Remove too-short contigs from the SPAdes assembly (upstream METABINNER_TOOSHORT)"
+shell = """
+mkdir -p intermediates/binning/metabinner/{sample}
+wd=$(pwd)
+mkdir -p .tmp/mb_tooshort_spades_{sample} && cd .tmp/mb_tooshort_spades_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa
+metabinner_path=$(dirname $(which run_metabinner.sh))
+python $metabinner_path/scripts/Filter_tooshort.py assembly.fa {config.min_contig_size}
+mv assembly_{config.min_contig_size}.fa SPAdes-MetaBinner-{sample}.{config.min_contig_size}.fa
+mv SPAdes-MetaBinner-{sample}.{config.min_contig_size}.fa "$wd/intermediates/binning/metabinner/{sample}/"
+cd "$wd"
+rm -rf .tmp/mb_tooshort_spades_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/metabinner.yaml"
+
+[[rules]]
+name = "metabinner_tooshort_megahit"
+input = ["intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa"]
+output = ["intermediates/binning/metabinner/{sample}/MEGAHIT-MetaBinner-{sample}.{config.min_contig_size}.fa"]
+description = "Remove too-short contigs from the MEGAHIT assembly (upstream METABINNER_TOOSHORT)"
+shell = """
+mkdir -p intermediates/binning/metabinner/{sample}
+wd=$(pwd)
+mkdir -p .tmp/mb_tooshort_megahit_{sample} && cd .tmp/mb_tooshort_megahit_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa
+metabinner_path=$(dirname $(which run_metabinner.sh))
+python $metabinner_path/scripts/Filter_tooshort.py assembly.fa {config.min_contig_size}
+mv assembly_{config.min_contig_size}.fa MEGAHIT-MetaBinner-{sample}.{config.min_contig_size}.fa
+mv MEGAHIT-MetaBinner-{sample}.{config.min_contig_size}.fa "$wd/intermediates/binning/metabinner/{sample}/"
+cd "$wd"
+rm -rf .tmp/mb_tooshort_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/metabinner.yaml"
+
+[[rules]]
+name = "metabinner_run_spades"
+input = [
+    "intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}.{config.min_contig_size}.fa",
+    "intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}_kmer_4_f{config.min_contig_size}.csv.gz",
+    "intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz",
+]
+output = [
+    "intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}.tsv.gz",
+    "intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}.metabinner.log.gz",
+]
+depends_on = ["metabinner_kmer_spades", "metabinner_tooshort_spades", "depths_spades"]
+description = "Run MetaBinner on the SPAdes assembly (upstream METABINNER_METABINNER)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/metabinner/{sample}
+mkdir -p .tmp/mb_run_spades_{sample} && cd .tmp/mb_run_spades_{sample}
+ln -sf "$wd/{input[0]}" filtered.fa
+ln -sf "$wd/{input[1]}" kmer.csv.gz
+ln -sf "$wd/{input[2]}" depth.txt.gz
+# unzip kmer file
+zcat kmer.csv.gz > kmer_profile.csv
+# create coverage profile in MetaBinner format (contigs >= min_contig_size)
+zcat depth.txt.gz | awk '{if ($2>{config.min_contig_size}) print $0 }' | cut -f -1,4- > coverage_profile.tsv
+# requires absolute paths
+metabinner_path=$(dirname $(which run_metabinner.sh))
+prefix=SPAdes-MetaBinner-{sample}
+bash run_metabinner.sh \\
+    -a "$wd/{input[0]}" \\
+    -o "$wd/.tmp/mb_run_spades_{sample}/$prefix" \\
+    -d "$wd/.tmp/mb_run_spades_{sample}/coverage_profile.tsv" \\
+    -k "$wd/.tmp/mb_run_spades_{sample}/kmer_profile.csv" \\
+    -t {threads} \\
+    -p $metabinner_path \\
+    -s {config.bin_metabinner_scale}
+rm kmer_profile.csv
+gzip -cn $prefix/metabinner_res/metabinner_result.tsv > $prefix.tsv.gz
+gzip -cn $prefix/metabinner_res/result.log > $prefix.metabinner.log.gz
+mv $prefix.tsv.gz $prefix.metabinner.log.gz "$wd/intermediates/binning/metabinner/{sample}/"
+cd "$wd"
+rm -rf .tmp/mb_run_spades_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "36G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/metabinner.yaml"
+
+[[rules]]
+name = "metabinner_run_megahit"
+input = [
+    "intermediates/binning/metabinner/{sample}/MEGAHIT-MetaBinner-{sample}.{config.min_contig_size}.fa",
+    "intermediates/binning/metabinner/{sample}/MEGAHIT-MetaBinner-{sample}_kmer_4_f{config.min_contig_size}.csv.gz",
+    "intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz",
+]
+output = [
+    "intermediates/binning/metabinner/{sample}/MEGAHIT-MetaBinner-{sample}.tsv.gz",
+    "intermediates/binning/metabinner/{sample}/MEGAHIT-MetaBinner-{sample}.metabinner.log.gz",
+]
+depends_on = ["metabinner_kmer_megahit", "metabinner_tooshort_megahit", "depths_megahit"]
+description = "Run MetaBinner on the MEGAHIT assembly (upstream METABINNER_METABINNER)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/metabinner/{sample}
+mkdir -p .tmp/mb_run_megahit_{sample} && cd .tmp/mb_run_megahit_{sample}
+ln -sf "$wd/{input[0]}" filtered.fa
+ln -sf "$wd/{input[1]}" kmer.csv.gz
+ln -sf "$wd/{input[2]}" depth.txt.gz
+zcat kmer.csv.gz > kmer_profile.csv
+zcat depth.txt.gz | awk '{if ($2>{config.min_contig_size}) print $0 }' | cut -f -1,4- > coverage_profile.tsv
+metabinner_path=$(dirname $(which run_metabinner.sh))
+prefix=MEGAHIT-MetaBinner-{sample}
+bash run_metabinner.sh \\
+    -a "$wd/{input[0]}" \\
+    -o "$wd/.tmp/mb_run_megahit_{sample}/$prefix" \\
+    -d "$wd/.tmp/mb_run_megahit_{sample}/coverage_profile.tsv" \\
+    -k "$wd/.tmp/mb_run_megahit_{sample}/kmer_profile.csv" \\
+    -t {threads} \\
+    -p $metabinner_path \\
+    -s {config.bin_metabinner_scale}
+rm kmer_profile.csv
+gzip -cn $prefix/metabinner_res/metabinner_result.tsv > $prefix.tsv.gz
+gzip -cn $prefix/metabinner_res/result.log > $prefix.metabinner.log.gz
+mv $prefix.tsv.gz $prefix.metabinner.log.gz "$wd/intermediates/binning/metabinner/{sample}/"
+cd "$wd"
+rm -rf .tmp/mb_run_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "36G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/metabinner.yaml"
+
+[[rules]]
+name = "metabinner_bins_spades"
+input = [
+    "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
+    "intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}.tsv.gz",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+    "{config.out_dir}/GenomeBinning/MetaBinner/discarded",
+    "intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}.unbinned.fa.gz",
+]
+depends_on = ["metabinner_run_spades"]
+description = "Extract the SPAdes MetaBinner bins (upstream METABINNER_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/mb_bins_spades_{sample} && cd .tmp/mb_bins_spades_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa
+zcat "$wd/{input[1]}" > membership.tsv
+prefix=SPAdes-MetaBinner-{sample}
+python "$wd/scripts/create_metabinner_bins.py" membership.tsv assembly.fa ./bins $prefix {config.min_contig_size}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins" \\
+         "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned" \\
+         "$wd/{config.out_dir}/GenomeBinning/MetaBinner/discarded" \\
+         "$wd/intermediates/binning/metabinner/{sample}"
+# upstream METABINNER_BINS publishes tooShort/lowDepth to MetaBinner/discarded
+# and unbinned to MetaBinner/unbinned; create_metabinner_bins.py never emits a
+# lowDepth file, so that move is guarded
+[ -e $prefix.tooShort.fa.gz ] && mv $prefix.tooShort.fa.gz "$wd/{config.out_dir}/GenomeBinning/MetaBinner/discarded/"
+[ -e $prefix.lowDepth.fa.gz ] && mv $prefix.lowDepth.fa.gz "$wd/{config.out_dir}/GenomeBinning/MetaBinner/discarded/"
+mv $prefix.unbinned.fa.gz "$wd/intermediates/binning/metabinner/{sample}/"
+cp "$wd/intermediates/binning/metabinner/{sample}/$prefix.unbinned.fa.gz" "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/"
+if ls bins/*.fa.gz >/dev/null 2>&1; then
+    mv bins/*.fa.gz "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/"
+fi
+cd "$wd"
+rm -rf .tmp/mb_bins_spades_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/metabinner.yaml"
+
+[[rules]]
+name = "metabinner_bins_megahit"
+input = [
+    "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa",
+    "intermediates/binning/metabinner/{sample}/MEGAHIT-MetaBinner-{sample}.tsv.gz",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+    "{config.out_dir}/GenomeBinning/MetaBinner/discarded",
+    "intermediates/binning/metabinner/{sample}/MEGAHIT-MetaBinner-{sample}.unbinned.fa.gz",
+]
+depends_on = ["metabinner_run_megahit"]
+description = "Extract the MEGAHIT MetaBinner bins (upstream METABINNER_BINS)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/mb_bins_megahit_{sample} && cd .tmp/mb_bins_megahit_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa
+zcat "$wd/{input[1]}" > membership.tsv
+prefix=MEGAHIT-MetaBinner-{sample}
+python "$wd/scripts/create_metabinner_bins.py" membership.tsv assembly.fa ./bins $prefix {config.min_contig_size}
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins" \\
+         "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned" \\
+         "$wd/{config.out_dir}/GenomeBinning/MetaBinner/discarded" \\
+         "$wd/intermediates/binning/metabinner/{sample}"
+# upstream METABINNER_BINS publishes tooShort/lowDepth to MetaBinner/discarded
+# and unbinned to MetaBinner/unbinned; create_metabinner_bins.py never emits a
+# lowDepth file, so that move is guarded
+[ -e $prefix.tooShort.fa.gz ] && mv $prefix.tooShort.fa.gz "$wd/{config.out_dir}/GenomeBinning/MetaBinner/discarded/"
+[ -e $prefix.lowDepth.fa.gz ] && mv $prefix.lowDepth.fa.gz "$wd/{config.out_dir}/GenomeBinning/MetaBinner/discarded/"
+mv $prefix.unbinned.fa.gz "$wd/intermediates/binning/metabinner/{sample}/"
+cp "$wd/intermediates/binning/metabinner/{sample}/$prefix.unbinned.fa.gz" "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/"
+if ls bins/*.fa.gz >/dev/null 2>&1; then
+    mv bins/*.fa.gz "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/"
+fi
+cd "$wd"
+rm -rf .tmp/mb_bins_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/metabinner.yaml"
+
+# ---------------------------------------------------------------------------
+# SEMIBIN (label process_medium; prefix {assembler}-SemiBin2-{id})
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "semibin_spades"
+input = [
+    "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
+    "intermediates/binning/alignments/SPAdes",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/log",
+]
+depends_on = ["bowtie2_align_spades"]
+description = "Binning of the SPAdes assembly with SemiBin2 (upstream SEMIBIN_SINGLEEASYBIN)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/semibin_spades_{sample} && cd .tmp/semibin_spades_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa
+bams=$(LC_ALL=C ls "$wd"/intermediates/binning/alignments/SPAdes/SPAdes-{sample}-*.bam)
+prefix=SPAdes-SemiBin2-{sample}
+# upstream passes --environment only for single-sample cohorts
+env_args=""
+if [ "$(echo {config.cohort_samples} | wc -w)" -eq 1 ]; then
+    env_args="--environment {config.semibin_environment}"
+fi
+SemiBin2 \\
+    single_easy_bin \\
+    --input-fasta assembly.fa \\
+    --input-bam $bams \\
+    --tag-output $prefix \\
+    --output $prefix \\
+    -t {threads} \\
+    --random-seed {config.semibin_rng_seed} \\
+    --min-len {config.min_contig_size} \\
+    --compression gz \\
+    --engine cpu \\
+    --sequencing-type short_reads \\
+    $env_args
+mv ./$prefix/output_bins/ bins/
+mv ./$prefix/SemiBinRun.log $prefix.SemiBinRun.log
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins" "$wd/{config.out_dir}/GenomeBinning/SemiBin2/log"
+if ls bins/*.fa.gz >/dev/null 2>&1; then
+    mv bins/*.fa.gz "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/"
+fi
+mv $prefix.SemiBinRun.log "$wd/{config.out_dir}/GenomeBinning/SemiBin2/log/"
+cd "$wd"
+rm -rf .tmp/semibin_spades_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "36G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/semibin.yaml"
+
+[[rules]]
+name = "semibin_megahit"
+input = [
+    "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa",
+    "intermediates/binning/alignments/MEGAHIT",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/log",
+]
+depends_on = ["bowtie2_align_megahit"]
+description = "Binning of the MEGAHIT assembly with SemiBin2 (upstream SEMIBIN_SINGLEEASYBIN)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/semibin_megahit_{sample} && cd .tmp/semibin_megahit_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa
+bams=$(LC_ALL=C ls "$wd"/intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-*.bam)
+prefix=MEGAHIT-SemiBin2-{sample}
+# upstream passes --environment only for single-sample cohorts
+env_args=""
+if [ "$(echo {config.cohort_samples} | wc -w)" -eq 1 ]; then
+    env_args="--environment {config.semibin_environment}"
+fi
+SemiBin2 \\
+    single_easy_bin \\
+    --input-fasta assembly.fa \\
+    --input-bam $bams \\
+    --tag-output $prefix \\
+    --output $prefix \\
+    -t {threads} \\
+    --random-seed {config.semibin_rng_seed} \\
+    --min-len {config.min_contig_size} \\
+    --compression gz \\
+    --engine cpu \\
+    --sequencing-type short_reads \\
+    $env_args
+mv ./$prefix/output_bins/ bins/
+mv ./$prefix/SemiBinRun.log $prefix.SemiBinRun.log
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins" "$wd/{config.out_dir}/GenomeBinning/SemiBin2/log"
+if ls bins/*.fa.gz >/dev/null 2>&1; then
+    mv bins/*.fa.gz "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/"
+fi
+mv $prefix.SemiBinRun.log "$wd/{config.out_dir}/GenomeBinning/SemiBin2/log/"
+cd "$wd"
+rm -rf .tmp/semibin_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "36G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/semibin.yaml"
+
+# ---------------------------------------------------------------------------
+# SEQKIT_STATS (label process_single + 1 cpu/1GB override, ext.args='').
+# Bin length stats per (assembler, binner, sample); upstream publishes
+# nothing, the table feeds the bin_min_size/bin_max_size filter which is a
+# no-op at defaults (not ported). Empty globs (binner found no bins) are
+# guarded: the table is touched empty instead of failing.
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "seqkit_spades_metabat2"
+input = ["{config.out_dir}/GenomeBinning/MetaBAT2/bins"]
+output = ["intermediates/binning/seqkit/SPAdes-MetaBAT2-{sample}.tsv"]
+depends_on = ["metabat2_spades"]
+description = "Bin length stats of the SPAdes MetaBAT2 bins (upstream SEQKIT_STATS)"
+shell = """
+mkdir -p intermediates/binning/seqkit
+if ls {config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.fa.gz >/dev/null 2>&1; then
+    seqkit stats --tabular --threads {threads} \\
+        {config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.fa.gz \\
+        > SPAdes-MetaBAT2-{sample}.tsv
+else
+    touch SPAdes-MetaBAT2-{sample}.tsv
+fi
+mv SPAdes-MetaBAT2-{sample}.tsv intermediates/binning/seqkit/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/seqkit.yaml"
+
+[[rules]]
+name = "seqkit_megahit_metabat2"
+input = ["{config.out_dir}/GenomeBinning/MetaBAT2/bins"]
+output = ["intermediates/binning/seqkit/MEGAHIT-MetaBAT2-{sample}.tsv"]
+depends_on = ["metabat2_megahit"]
+description = "Bin length stats of the MEGAHIT MetaBAT2 bins (upstream SEQKIT_STATS)"
+shell = """
+mkdir -p intermediates/binning/seqkit
+if ls {config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*.fa.gz >/dev/null 2>&1; then
+    seqkit stats --tabular --threads {threads} \\
+        {config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*.fa.gz \\
+        > MEGAHIT-MetaBAT2-{sample}.tsv
+else
+    touch MEGAHIT-MetaBAT2-{sample}.tsv
+fi
+mv MEGAHIT-MetaBAT2-{sample}.tsv intermediates/binning/seqkit/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/seqkit.yaml"
+
+[[rules]]
+name = "seqkit_spades_maxbin2"
+input = ["{config.out_dir}/GenomeBinning/MaxBin2/bins"]
+output = ["intermediates/binning/seqkit/SPAdes-MaxBin2-{sample}.tsv"]
+depends_on = ["maxbin2_spades"]
+description = "Bin length stats of the SPAdes MaxBin2 bins (upstream SEQKIT_STATS)"
+shell = """
+mkdir -p intermediates/binning/seqkit
+if ls {config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}*.fa.gz >/dev/null 2>&1; then
+    seqkit stats --tabular --threads {threads} \\
+        {config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}*.fa.gz \\
+        > SPAdes-MaxBin2-{sample}.tsv
+else
+    touch SPAdes-MaxBin2-{sample}.tsv
+fi
+mv SPAdes-MaxBin2-{sample}.tsv intermediates/binning/seqkit/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/seqkit.yaml"
+
+[[rules]]
+name = "seqkit_megahit_maxbin2"
+input = ["{config.out_dir}/GenomeBinning/MaxBin2/bins"]
+output = ["intermediates/binning/seqkit/MEGAHIT-MaxBin2-{sample}.tsv"]
+depends_on = ["maxbin2_megahit"]
+description = "Bin length stats of the MEGAHIT MaxBin2 bins (upstream SEQKIT_STATS)"
+shell = """
+mkdir -p intermediates/binning/seqkit
+if ls {config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}*.fa.gz >/dev/null 2>&1; then
+    seqkit stats --tabular --threads {threads} \\
+        {config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}*.fa.gz \\
+        > MEGAHIT-MaxBin2-{sample}.tsv
+else
+    touch MEGAHIT-MaxBin2-{sample}.tsv
+fi
+mv MEGAHIT-MaxBin2-{sample}.tsv intermediates/binning/seqkit/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/seqkit.yaml"
+
+[[rules]]
+name = "seqkit_spades_concoct"
+input = ["{config.out_dir}/GenomeBinning/CONCOCT/bins"]
+output = ["intermediates/binning/seqkit/SPAdes-CONCOCT-{sample}.tsv"]
+depends_on = ["concoct_extract_spades"]
+description = "Bin length stats of the SPAdes CONCOCT bins (upstream SEQKIT_STATS)"
+shell = """
+mkdir -p intermediates/binning/seqkit
+if ls {config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}*.fa.gz >/dev/null 2>&1; then
+    seqkit stats --tabular --threads {threads} \\
+        {config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}*.fa.gz \\
+        > SPAdes-CONCOCT-{sample}.tsv
+else
+    touch SPAdes-CONCOCT-{sample}.tsv
+fi
+mv SPAdes-CONCOCT-{sample}.tsv intermediates/binning/seqkit/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/seqkit.yaml"
+
+[[rules]]
+name = "seqkit_megahit_concoct"
+input = ["{config.out_dir}/GenomeBinning/CONCOCT/bins"]
+output = ["intermediates/binning/seqkit/MEGAHIT-CONCOCT-{sample}.tsv"]
+depends_on = ["concoct_extract_megahit"]
+description = "Bin length stats of the MEGAHIT CONCOCT bins (upstream SEQKIT_STATS)"
+shell = """
+mkdir -p intermediates/binning/seqkit
+if ls {config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}*.fa.gz >/dev/null 2>&1; then
+    seqkit stats --tabular --threads {threads} \\
+        {config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}*.fa.gz \\
+        > MEGAHIT-CONCOCT-{sample}.tsv
+else
+    touch MEGAHIT-CONCOCT-{sample}.tsv
+fi
+mv MEGAHIT-CONCOCT-{sample}.tsv intermediates/binning/seqkit/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/seqkit.yaml"
+
+[[rules]]
+name = "seqkit_spades_comebin"
+input = ["{config.out_dir}/GenomeBinning/COMEBin/bins"]
+output = ["intermediates/binning/seqkit/SPAdes-COMEBin-{sample}.tsv"]
+depends_on = ["comebin_spades"]
+description = "Bin length stats of the SPAdes COMEBin bins (upstream SEQKIT_STATS)"
+shell = """
+mkdir -p intermediates/binning/seqkit
+if ls {config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}*.fa.gz >/dev/null 2>&1; then
+    seqkit stats --tabular --threads {threads} \\
+        {config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}*.fa.gz \\
+        > SPAdes-COMEBin-{sample}.tsv
+else
+    touch SPAdes-COMEBin-{sample}.tsv
+fi
+mv SPAdes-COMEBin-{sample}.tsv intermediates/binning/seqkit/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/seqkit.yaml"
+
+[[rules]]
+name = "seqkit_megahit_comebin"
+input = ["{config.out_dir}/GenomeBinning/COMEBin/bins"]
+output = ["intermediates/binning/seqkit/MEGAHIT-COMEBin-{sample}.tsv"]
+depends_on = ["comebin_megahit"]
+description = "Bin length stats of the MEGAHIT COMEBin bins (upstream SEQKIT_STATS)"
+shell = """
+mkdir -p intermediates/binning/seqkit
+if ls {config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}*.fa.gz >/dev/null 2>&1; then
+    seqkit stats --tabular --threads {threads} \\
+        {config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}*.fa.gz \\
+        > MEGAHIT-COMEBin-{sample}.tsv
+else
+    touch MEGAHIT-COMEBin-{sample}.tsv
+fi
+mv MEGAHIT-COMEBin-{sample}.tsv intermediates/binning/seqkit/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/seqkit.yaml"
+
+[[rules]]
+name = "seqkit_spades_metabinner"
+input = ["{config.out_dir}/GenomeBinning/MetaBinner/bins"]
+output = ["intermediates/binning/seqkit/SPAdes-MetaBinner-{sample}.tsv"]
+depends_on = ["metabinner_bins_spades"]
+description = "Bin length stats of the SPAdes MetaBinner bins (upstream SEQKIT_STATS)"
+shell = """
+mkdir -p intermediates/binning/seqkit
+if ls {config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sample}*.fa.gz >/dev/null 2>&1; then
+    seqkit stats --tabular --threads {threads} \\
+        {config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sample}*.fa.gz \\
+        > SPAdes-MetaBinner-{sample}.tsv
+else
+    touch SPAdes-MetaBinner-{sample}.tsv
+fi
+mv SPAdes-MetaBinner-{sample}.tsv intermediates/binning/seqkit/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/seqkit.yaml"
+
+[[rules]]
+name = "seqkit_megahit_metabinner"
+input = ["{config.out_dir}/GenomeBinning/MetaBinner/bins"]
+output = ["intermediates/binning/seqkit/MEGAHIT-MetaBinner-{sample}.tsv"]
+depends_on = ["metabinner_bins_megahit"]
+description = "Bin length stats of the MEGAHIT MetaBinner bins (upstream SEQKIT_STATS)"
+shell = """
+mkdir -p intermediates/binning/seqkit
+if ls {config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{sample}*.fa.gz >/dev/null 2>&1; then
+    seqkit stats --tabular --threads {threads} \\
+        {config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{sample}*.fa.gz \\
+        > MEGAHIT-MetaBinner-{sample}.tsv
+else
+    touch MEGAHIT-MetaBinner-{sample}.tsv
+fi
+mv MEGAHIT-MetaBinner-{sample}.tsv intermediates/binning/seqkit/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/seqkit.yaml"
+
+[[rules]]
+name = "seqkit_spades_semibin"
+input = ["{config.out_dir}/GenomeBinning/SemiBin2/bins"]
+output = ["intermediates/binning/seqkit/SPAdes-SemiBin2-{sample}.tsv"]
+depends_on = ["semibin_spades"]
+description = "Bin length stats of the SPAdes SemiBin2 bins (upstream SEQKIT_STATS)"
+shell = """
+mkdir -p intermediates/binning/seqkit
+if ls {config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}*.fa.gz >/dev/null 2>&1; then
+    seqkit stats --tabular --threads {threads} \\
+        {config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}*.fa.gz \\
+        > SPAdes-SemiBin2-{sample}.tsv
+else
+    touch SPAdes-SemiBin2-{sample}.tsv
+fi
+mv SPAdes-SemiBin2-{sample}.tsv intermediates/binning/seqkit/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/seqkit.yaml"
+
+[[rules]]
+name = "seqkit_megahit_semibin"
+input = ["{config.out_dir}/GenomeBinning/SemiBin2/bins"]
+output = ["intermediates/binning/seqkit/MEGAHIT-SemiBin2-{sample}.tsv"]
+depends_on = ["semibin_megahit"]
+description = "Bin length stats of the MEGAHIT SemiBin2 bins (upstream SEQKIT_STATS)"
+shell = """
+mkdir -p intermediates/binning/seqkit
+if ls {config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}*.fa.gz >/dev/null 2>&1; then
+    seqkit stats --tabular --threads {threads} \\
+        {config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}*.fa.gz \\
+        > MEGAHIT-SemiBin2-{sample}.tsv
+else
+    touch MEGAHIT-SemiBin2-{sample}.tsv
+fi
+mv MEGAHIT-SemiBin2-{sample}.tsv intermediates/binning/seqkit/
+"""
+
+[rules.resources]
+threads = 1
+memory = "1G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/seqkit.yaml"
+
+# ---------------------------------------------------------------------------
+# SPLIT_FASTA (label process_low; one per unbinned source: MetaBAT2, MaxBin2,
+# MetaBinner). split_fasta.py names the chunks after the input basename
+# (minus .gz and the fasta extension), so the rule symlinks the input into
+# the scratch dir first. Chunks go to results/GenomeBinning/{binner}/unbinned/,
+# pooled/remaining contigs to .../unbinned/discarded/ (upstream publishDir
+# intent; Nextflow's globs would actually match both).
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "split_fasta_metabat2_spades"
+input = ["intermediates/binning/metabat2/{sample}/SPAdes-MetaBAT2-{sample}.unbinned.fa.gz"]
+output = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/discarded",
+]
+depends_on = ["metabat2_spades"]
+description = "Split the SPAdes MetaBAT2 unbinned contigs into chunks (upstream SPLIT_FASTA)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/split_mb2_spades_{sample} && cd .tmp/split_mb2_spades_{sample}
+ln -sf "$wd/{input[0]}" SPAdes-MetaBAT2-{sample}.unbinned.fa.gz
+python "$wd/scripts/split_fasta.py" \\
+    SPAdes-MetaBAT2-{sample}.unbinned.fa.gz \\
+    {config.min_length_unbinned_contigs} \\
+    {config.max_unbinned_contigs} \\
+    {config.min_contig_size}
+gzip *.fa
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/discarded"
+for f in *.pooled.fa.gz *.remaining.fa.gz; do
+    [ -e "$f" ] && mv "$f" "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/discarded/"
+done
+mv SPAdes-MetaBAT2-{sample}.unbinned.*.fa.gz "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/"
+cd "$wd"
+rm -rf .tmp/split_mb2_spades_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/split_fasta.yaml"
+
+[[rules]]
+name = "split_fasta_metabat2_megahit"
+input = ["intermediates/binning/metabat2/{sample}/MEGAHIT-MetaBAT2-{sample}.unbinned.fa.gz"]
+output = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/discarded",
+]
+depends_on = ["metabat2_megahit"]
+description = "Split the MEGAHIT MetaBAT2 unbinned contigs into chunks (upstream SPLIT_FASTA)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/split_mb2_megahit_{sample} && cd .tmp/split_mb2_megahit_{sample}
+ln -sf "$wd/{input[0]}" MEGAHIT-MetaBAT2-{sample}.unbinned.fa.gz
+python "$wd/scripts/split_fasta.py" \\
+    MEGAHIT-MetaBAT2-{sample}.unbinned.fa.gz \\
+    {config.min_length_unbinned_contigs} \\
+    {config.max_unbinned_contigs} \\
+    {config.min_contig_size}
+gzip *.fa
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/discarded"
+for f in *.pooled.fa.gz *.remaining.fa.gz; do
+    [ -e "$f" ] && mv "$f" "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/discarded/"
+done
+mv MEGAHIT-MetaBAT2-{sample}.unbinned.*.fa.gz "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/"
+cd "$wd"
+rm -rf .tmp/split_mb2_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/split_fasta.yaml"
+
+[[rules]]
+name = "split_fasta_maxbin2_spades"
+input = ["intermediates/binning/maxbin2/{sample}/SPAdes-MaxBin2-{sample}.noclass.gz"]
+output = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned/discarded",
+]
+depends_on = ["maxbin2_spades"]
+description = "Split the SPAdes MaxBin2 unclassified contigs into chunks (upstream SPLIT_FASTA)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/split_mxb2_spades_{sample} && cd .tmp/split_mxb2_spades_{sample}
+ln -sf "$wd/{input[0]}" SPAdes-MaxBin2-{sample}.noclass.gz
+python "$wd/scripts/split_fasta.py" \\
+    SPAdes-MaxBin2-{sample}.noclass.gz \\
+    {config.min_length_unbinned_contigs} \\
+    {config.max_unbinned_contigs} \\
+    {config.min_contig_size}
+gzip *.fa
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/discarded"
+for f in *.pooled.fa.gz *.remaining.fa.gz; do
+    [ -e "$f" ] && mv "$f" "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/discarded/"
+done
+mv SPAdes-MaxBin2-{sample}.noclass.*.fa.gz "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/"
+cd "$wd"
+rm -rf .tmp/split_mxb2_spades_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/split_fasta.yaml"
+
+[[rules]]
+name = "split_fasta_maxbin2_megahit"
+input = ["intermediates/binning/maxbin2/{sample}/MEGAHIT-MaxBin2-{sample}.noclass.gz"]
+output = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned/discarded",
+]
+depends_on = ["maxbin2_megahit"]
+description = "Split the MEGAHIT MaxBin2 unclassified contigs into chunks (upstream SPLIT_FASTA)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/split_mxb2_megahit_{sample} && cd .tmp/split_mxb2_megahit_{sample}
+ln -sf "$wd/{input[0]}" MEGAHIT-MaxBin2-{sample}.noclass.gz
+python "$wd/scripts/split_fasta.py" \\
+    MEGAHIT-MaxBin2-{sample}.noclass.gz \\
+    {config.min_length_unbinned_contigs} \\
+    {config.max_unbinned_contigs} \\
+    {config.min_contig_size}
+gzip *.fa
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/discarded"
+for f in *.pooled.fa.gz *.remaining.fa.gz; do
+    [ -e "$f" ] && mv "$f" "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/discarded/"
+done
+mv MEGAHIT-MaxBin2-{sample}.noclass.*.fa.gz "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/"
+cd "$wd"
+rm -rf .tmp/split_mxb2_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/split_fasta.yaml"
+
+[[rules]]
+name = "split_fasta_metabinner_spades"
+input = ["intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}.unbinned.fa.gz"]
+output = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned/discarded",
+]
+depends_on = ["metabinner_bins_spades"]
+description = "Split the SPAdes MetaBinner unbinned contigs into chunks (upstream SPLIT_FASTA)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/split_mbin_spades_{sample} && cd .tmp/split_mbin_spades_{sample}
+ln -sf "$wd/{input[0]}" SPAdes-MetaBinner-{sample}.unbinned.fa.gz
+python "$wd/scripts/split_fasta.py" \\
+    SPAdes-MetaBinner-{sample}.unbinned.fa.gz \\
+    {config.min_length_unbinned_contigs} \\
+    {config.max_unbinned_contigs} \\
+    {config.min_contig_size}
+gzip *.fa
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/discarded"
+for f in *.pooled.fa.gz *.remaining.fa.gz; do
+    [ -e "$f" ] && mv "$f" "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/discarded/"
+done
+mv SPAdes-MetaBinner-{sample}.unbinned.*.fa.gz "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/"
+cd "$wd"
+rm -rf .tmp/split_mbin_spades_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/split_fasta.yaml"
+
+[[rules]]
+name = "split_fasta_metabinner_megahit"
+input = ["intermediates/binning/metabinner/{sample}/MEGAHIT-MetaBinner-{sample}.unbinned.fa.gz"]
+output = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned/discarded",
+]
+depends_on = ["metabinner_bins_megahit"]
+description = "Split the MEGAHIT MetaBinner unbinned contigs into chunks (upstream SPLIT_FASTA)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/split_mbin_megahit_{sample} && cd .tmp/split_mbin_megahit_{sample}
+ln -sf "$wd/{input[0]}" MEGAHIT-MetaBinner-{sample}.unbinned.fa.gz
+python "$wd/scripts/split_fasta.py" \\
+    MEGAHIT-MetaBinner-{sample}.unbinned.fa.gz \\
+    {config.min_length_unbinned_contigs} \\
+    {config.max_unbinned_contigs} \\
+    {config.min_contig_size}
+gzip *.fa
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/discarded"
+for f in *.pooled.fa.gz *.remaining.fa.gz; do
+    [ -e "$f" ] && mv "$f" "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/discarded/"
+done
+mv MEGAHIT-MetaBinner-{sample}.unbinned.*.fa.gz "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/"
+cd "$wd"
+rm -rf .tmp/split_mbin_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/split_fasta.yaml"

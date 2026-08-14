@@ -1,0 +1,12 @@
+---
+# Environment for gtdbtk_db_preparation — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/mag gtdbtk_db_preparation local module environment (modules/local/gtdbtk_db_preparation/environment.yml); tar pinned additionally because the oxo-flow port has no container layer.
+name: gtdbtk_db_preparation
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::coreutils=9.5
+  - bioconda::grep=3.11
+  - bioconda::gzip=1.13
+  - bioconda::tar=1.34

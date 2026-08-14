@@ -1,0 +1,14 @@
+---
+# Environment for gunzip — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/gunzip module environment (modules/nf-core/gunzip/main/environment.yml); tar pinned additionally because the oxo-flow port has no container layer.
+name: gunzip
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::coreutils=9.5
+  - bioconda::grep=3.11
+  - bioconda::gzip=1.13
+  - bioconda::lbzip2=2.5
+  - bioconda::sed=4.8
+  - bioconda::tar=1.34

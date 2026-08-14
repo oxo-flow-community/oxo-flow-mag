@@ -1,0 +1,9 @@
+---
+# Environment for gtdbtk — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/gtdbtk/classifywf 2.7.2 module environment (modules/nf-core/gtdbtk/classifywf/environment.yml).
+name: gtdbtk
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::gtdbtk=2.7.2

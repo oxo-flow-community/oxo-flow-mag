@@ -1,0 +1,9 @@
+---
+# Environment for multiqc — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/multiqc 1.34 module environment (modules/nf-core/multiqc/main/environment.yml).
+name: multiqc
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::multiqc=1.34

@@ -1,0 +1,11 @@
+---
+# Environment for bowtie2_samtools — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/bowtie2/align 2.4.2 + samtools 1.11 module environment (modules/nf-core/bowtie2/align/environment.yml).
+name: bowtie2_samtools
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::bowtie2=2.4.2
+  - bioconda::samtools=1.11
+  - bioconda::pigz=2.3.4

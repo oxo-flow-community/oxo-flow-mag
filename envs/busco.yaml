@@ -1,0 +1,9 @@
+---
+# Environment for busco — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/busco 6.1.0 module environment (modules/nf-core/busco/busco/environment.yml).
+name: busco
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::busco=6.1.0

@@ -1,0 +1,9 @@
+---
+# Environment for bioawk — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/convert_depths 1.0 module environment (modules/local/convert_depths/environment.yml).
+name: bioawk
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::bioawk=1.0

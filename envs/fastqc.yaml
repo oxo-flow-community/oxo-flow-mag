@@ -1,0 +1,9 @@
+---
+# Environment for fastqc — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/fastqc 0.12.1 module environment (modules/nf-core/fastqc/main/environment.yml).
+name: fastqc
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::fastqc=0.12.1

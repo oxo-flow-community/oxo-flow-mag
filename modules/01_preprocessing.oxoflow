@@ -1,0 +1,214 @@
+[workflow]
+name = "01_preprocessing"
+description = "nf-core/mag 5.5.0 01_preprocessing fragment"
+# ---------------------------------------------------------------------------
+# SHORTREAD_PREPROCESSING (nf-core/mag 5.5.0 default path, clip_tool=fastp):
+# FASTQC_RAW -> FASTP -> BOWTIE2_PHIX_REMOVAL_BUILD -> BOWTIE2_PHIX_REMOVAL_ALIGN
+# -> FASTQC_TRIMMED. Host removal, adapterremoval/trimmomatic, lane merging,
+# bbnorm and assembly_input are not ported (off by default).
+# ---------------------------------------------------------------------------
+
+# FASTQC_RAW (label process_low, ext.args '--quiet', prefix {id}_run{run}_raw)
+[[rules]]
+name = "fastqc_raw"
+input = [
+    "{config.input_dir}/{sample}_R1.fastq.gz",
+    "{config.input_dir}/{sample}_R2.fastq.gz",
+]
+output = [
+    "{config.out_dir}/QC_shortreads/fastqc/{sample}_run1_raw_1_fastqc.html",
+    "{config.out_dir}/QC_shortreads/fastqc/{sample}_run1_raw_2_fastqc.html",
+]
+description = "Run FastQC on the raw reads (upstream FASTQC_RAW)"
+shell = """
+# upstream renames reads to <prefix>_1/2.fastq.gz for consistent MultiQC naming
+ln -sf {input[0]} {sample}_run1_raw_1.fastq.gz
+ln -sf {input[1]} {sample}_run1_raw_2.fastq.gz
+# --memory = task.memory (12G) / task.cpus (2) in MB (label process_low)
+fastqc \\
+    --quiet \\
+    --threads {threads} \\
+    --memory 6144 \\
+    {sample}_run1_raw_1.fastq.gz \\
+    {sample}_run1_raw_2.fastq.gz
+mkdir -p {config.out_dir}/QC_shortreads/fastqc
+mv {sample}_run1_raw_1_fastqc.html {output[0]}
+mv {sample}_run1_raw_2_fastqc.html {output[1]}
+# the fastqc zip archives stay in the rule scratch dir: upstream FASTQC_RAW
+# publishes *.html only (conf/modules.config)
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/fastqc.yaml"
+
+# FASTP (label process_medium + 8GB override, prefix {id}_run{run}_fastp)
+[[rules]]
+name = "fastp"
+input = [
+    "{config.input_dir}/{sample}_R1.fastq.gz",
+    "{config.input_dir}/{sample}_R2.fastq.gz",
+]
+output = [
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_1.fastp.fastq.gz",
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_2.fastp.fastq.gz",
+    "{config.out_dir}/QC_shortreads/fastp/{sample}/{sample}_run1_fastp.fastp.json",
+    "{config.out_dir}/QC_shortreads/fastp/{sample}/{sample}_run1_fastp.fastp.html",
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp.fastp.log",
+]
+description = "Adapter and quality trimming with fastp (upstream FASTP)"
+shell = """
+mkdir -p intermediates/QC_shortreads/fastp {config.out_dir}/QC_shortreads/fastp/{sample}
+ln -sf {input[0]} {sample}_run1_fastp_1.fastq.gz
+ln -sf {input[1]} {sample}_run1_fastp_2.fastq.gz
+# upstream: 2>| >(tee ...) process substitution is not available in the
+# oxo-flow sh -c executor; the log is captured with a plain redirect instead
+# upstream: params.fastp_trim_polyg ? "--trim_poly_g" : ''
+if [ "{config.fastp_trim_polyg}" = "true" ]; then
+    fastp_polyg="--trim_poly_g"
+else
+    fastp_polyg=""
+fi
+fastp \\
+    --in1 {sample}_run1_fastp_1.fastq.gz \\
+    --in2 {sample}_run1_fastp_2.fastq.gz \\
+    --out1 {sample}_run1_fastp_1.fastp.fastq.gz \\
+    --out2 {sample}_run1_fastp_2.fastp.fastq.gz \\
+    --json {sample}_run1_fastp.fastp.json \\
+    --html {sample}_run1_fastp.fastp.html \\
+    --thread {threads} \\
+    --detect_adapter_for_pe \\
+    -q {config.fastp_qualified_quality} \\
+    --cut_front \\
+    --cut_tail \\
+    --cut_mean_quality {config.fastp_cut_mean_quality} \\
+    --length_required {config.reads_minlength} \\
+    $fastp_polyg \\
+    2> {sample}_run1_fastp.fastp.log
+mv {sample}_run1_fastp_1.fastp.fastq.gz intermediates/QC_shortreads/fastp/
+mv {sample}_run1_fastp_2.fastp.fastq.gz intermediates/QC_shortreads/fastp/
+mv {sample}_run1_fastp.fastp.json {config.out_dir}/QC_shortreads/fastp/{sample}/
+mv {sample}_run1_fastp.fastp.html {config.out_dir}/QC_shortreads/fastp/{sample}/
+mv {sample}_run1_fastp.fastp.log intermediates/QC_shortreads/fastp/
+"""
+
+[rules.resources]
+threads = 6
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/fastp.yaml"
+
+# BOWTIE2_PHIX_REMOVAL_BUILD (single instance; builds the phiX index once)
+[[rules]]
+name = "phix_build"
+input = ["{config.phix_reference}"]
+output = [
+    "intermediates/binning/phix_index/GCA_002596845.1_ASM259684v1_genomic.fna.1.bt2",
+    "intermediates/binning/phix_index/GCA_002596845.1_ASM259684v1_genomic.fna.rev.1.bt2",
+]
+description = "Build the bowtie2 index for phiX read removal (upstream BOWTIE2_PHIX_REMOVAL_BUILD)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/phix_index
+cd intermediates/binning/phix_index
+# upstream: bowtie2-build <fasta> <fasta.simpleName>; the phiX reference is
+# kept gzipped (bowtie2-build detects it), index base = file name minus .gz
+bowtie2-build \\
+    --threads {threads} \\
+    "$wd/{config.phix_reference}" \\
+    GCA_002596845.1_ASM259684v1_genomic.fna
+cd "$wd"
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/bowtie2.yaml"
+
+# BOWTIE2_PHIX_REMOVAL_ALIGN (8 cpu / 2 GB override, prefix {id}_run{run}_phix_removed)
+[[rules]]
+name = "phix_align"
+input = [
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_1.fastp.fastq.gz",
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_2.fastp.fastq.gz",
+    "intermediates/binning/phix_index",
+]
+output = [
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz",
+    "{config.out_dir}/QC_shortreads/remove_phix/{sample}_run1_phix_removed.bowtie2.log",
+]
+description = "Remove phiX reads by bowtie2 mapping (upstream BOWTIE2_PHIX_REMOVAL_ALIGN)"
+depends_on = ["phix_build"]
+shell = """
+mkdir -p intermediates/QC_shortreads/remove_phix {config.out_dir}/QC_shortreads/remove_phix
+INDEX=`find -L intermediates/binning/phix_index -name "*.rev.1.bt2" | sed "s/\\.rev.1.bt2$//"`
+[ -z "$INDEX" ] && INDEX=`find -L intermediates/binning/phix_index -name "*.rev.1.bt2l" | sed "s/\\.rev.1.bt2l$//"`
+[ -z "$INDEX" ] && echo "Bowtie2 index files not found" 1>&2 && exit 1
+
+bowtie2 -p {threads} \\
+        -x "$INDEX" \\
+        -1 {input[0]} -2 {input[1]} \\
+        --un-conc-gz {sample}_run1_phix_removed.unmapped_%.fastq.gz \\
+        --al-conc-gz {sample}_run1_phix_removed.mapped_%.fastq.gz \\
+        1> /dev/null \\
+        2> {sample}_run1_phix_removed.bowtie2.log
+rm -f {sample}_run1_phix_removed.mapped_*.fastq.gz
+
+mv {sample}_run1_phix_removed_1.unmapped.fastq.gz intermediates/QC_shortreads/remove_phix/
+mv {sample}_run1_phix_removed_2.unmapped.fastq.gz intermediates/QC_shortreads/remove_phix/
+mv {sample}_run1_phix_removed.bowtie2.log {config.out_dir}/QC_shortreads/remove_phix/
+"""
+
+[rules.resources]
+threads = 8
+memory = "2G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/bowtie2.yaml"
+
+# FASTQC_TRIMMED (label process_low, ext.args '--quiet', prefix {id}_run{run}_trimmed)
+[[rules]]
+name = "fastqc_trimmed"
+input = [
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz",
+]
+output = [
+    "{config.out_dir}/QC_shortreads/fastqc/{sample}_run1_trimmed_1_fastqc.html",
+    "{config.out_dir}/QC_shortreads/fastqc/{sample}_run1_trimmed_2_fastqc.html",
+]
+description = "Run FastQC on the phiX-removed reads (upstream FASTQC_TRIMMED)"
+shell = """
+ln -sf {input[0]} {sample}_run1_trimmed_1.fastq.gz
+ln -sf {input[1]} {sample}_run1_trimmed_2.fastq.gz
+fastqc \\
+    --quiet \\
+    --threads {threads} \\
+    --memory 6144 \\
+    {sample}_run1_trimmed_1.fastq.gz \\
+    {sample}_run1_trimmed_2.fastq.gz
+mkdir -p {config.out_dir}/QC_shortreads/fastqc
+mv {sample}_run1_trimmed_1_fastqc.html {output[0]}
+mv {sample}_run1_trimmed_2_fastqc.html {output[1]}
+# the fastqc zip archives stay in the rule scratch dir: upstream FASTQC_TRIMMED
+# publishes *.html only (conf/modules.config)
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/fastqc.yaml"

@@ -1,0 +1,9 @@
+---
+# Environment for spades — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/spades 4.1.0 module environment (modules/nf-core/spades/main/environment.yml).
+name: spades
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::spades=4.1.0

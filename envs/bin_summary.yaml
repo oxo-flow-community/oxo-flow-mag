@@ -1,0 +1,10 @@
+---
+# Environment for bin_summary — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/mag bin_summary local module environment (modules/local/bin_summary/environment.yml).
+name: bin_summary
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::python=3.10.6
+  - bioconda::pandas=1.4.3

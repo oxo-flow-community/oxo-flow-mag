@@ -1,0 +1,9 @@
+---
+# Environment for metabinner — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/metabinner 1.4.4 module environment (modules/nf-core/metabinner/main/environment.yml).
+name: metabinner
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::metabinner=1.4.4-0

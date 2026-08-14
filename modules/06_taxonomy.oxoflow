@@ -1,0 +1,1703 @@
+[workflow]
+name = "06_taxonomy"
+description = "nf-core/mag 5.5.0 06_taxonomy fragment"
+# ---------------------------------------------------------------------------
+# TAXONOMY (nf-core/mag 5.5.0 default path): GTDB-Tk database preparation,
+# GTDB-Tk classification per (assembler, binner) group of the bins passing
+# the BUSCO-based QC filter (the upstream Groovy filter is replicated in
+# scripts/filter_bins_by_qc.py), the gtdbtk + bin summaries, PROKKA
+# annotation of every bin, and MultiQC.
+#
+# Like the QC fragment, each per-(assembler, binner) GTDB-Tk group runs
+# classify_wf twice: once for the bins (prefix ...-unclassified-unrefined-)
+# and once for the passing unbinned chunks (...-unrefined_unbinned-). Both
+# out_dir trees land in results/Taxonomy/GTDB-Tk/{assembler}/{binner}/{sample}/.
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# GTDBTK_DB_PREPARATION: unpack the GTDB-Tk data tar.gz (or copy a local
+# directory). Upstream default --gtdb_db is a download URL; the file must be
+# downloaded first (see README).
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "gtdbtk_db_preparation"
+input = ["{config.gtdb_db}"]
+output = ["intermediates/gtdbtk_db/database"]
+description = "Prepare the GTDB-Tk reference database (upstream GTDBTK_DB_PREPARATION)"
+shell = """
+mkdir -p intermediates/gtdbtk_db/database
+if [ -d "{input[0]}" ]; then
+    # user passed a directory instead of a tar.gz
+    cp -r "{input[0]}"/. intermediates/gtdbtk_db/database/
+else
+    tar -xzf "{input[0]}" -C intermediates/gtdbtk_db/database --strip 1
+fi
+"""
+
+[rules.resources]
+threads = 1
+memory = "7G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gtdbtk_db_preparation.yaml"
+[[rules]]
+name = "gtdbtk_spades_metabat2"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBAT2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+    "intermediates/gtdbtk_db/database",
+]
+output = [
+    "intermediates/binning/gtdbtk/discarded/SPAdes-MetaBAT2-{sample}.txt",
+    "intermediates/binning/gtdbtk/summaries/SPAdes-MetaBAT2-{sample}",
+]
+depends_on = ["busco_spades_metabat2", "gtdbtk_db_preparation"]
+description = "GTDB-Tk classification of the SPAdes MetaBAT2 bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/gtdbtk/discarded intermediates/binning/gtdbtk/summaries/SPAdes-MetaBAT2-{sample}
+# replicate the upstream Groovy QC filter: per group, read the BUSCO batch
+# summary (Input_file/Complete/Duplicated), drop negative readings and bins
+# without metrics; a bin passes if any single reading clears both thresholds
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBAT2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins" \
+    --bins-glob "SPAdes-MetaBAT2-{sample}*.fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_bins.txt \
+    --out-discarded discarded_bins.txt
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned" \
+    --bins-glob "SPAdes-MetaBAT2-{sample}*[0-9].fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_chunks.txt \
+    --out-discarded discarded_chunks.txt
+cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
+cp discarded_all.txt intermediates/binning/gtdbtk/discarded/SPAdes-MetaBAT2-{sample}.txt
+
+export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+classify_group() {
+    # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
+    mkdir -p "$4" && cd "$4"
+    mkdir -p bins_dir
+    while read -r b; do
+        [ -z "$b" ] && continue
+        ln -sf "$wd/$2/$b" bins_dir/$b
+    done < "$wd/$1"
+    mkdir pplacer_tmp
+    gtdbtk classify_wf \
+        --extension gz \
+        --min_perc_aa {config.gtdbtk_min_perc_aa} \
+        --min_af {config.gtdbtk_min_af} \
+        --pplacer_cpus {config.gtdbtk_pplacer_cpus} \
+        --genome_dir bins_dir \
+        --prefix "$3" \
+        --out_dir "$3" \
+        --cpus {threads} \
+        --scratch_dir pplacer_tmp
+    mv "$3/gtdbtk.log" "$3/$3.log"
+    mv "$3/gtdbtk.warnings.log" "$3/$3.warnings.log"
+    cp "$3"/classify/*.summary.tsv "$wd/intermediates/binning/gtdbtk/summaries/SPAdes-MetaBAT2-{sample}/"
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/SPAdes/MetaBAT2/{sample}"
+    mv "$3" "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/SPAdes/MetaBAT2/{sample}/"
+    cd "$wd"
+    rm -rf "$4"
+}
+if [ -s passed_bins.txt ]; then
+    classify_group passed_bins.txt "{config.out_dir}/GenomeBinning/MetaBAT2/bins" "SPAdes-MetaBAT2-unclassified-unrefined-{sample}" .tmp/gtdbtk_bins_spades_metabat2_{sample}
+fi
+if [ -s passed_chunks.txt ]; then
+    classify_group passed_chunks.txt "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned" "SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}" .tmp/gtdbtk_chunks_spades_metabat2_{sample}
+fi
+"""
+
+[rules.resources]
+threads = 2
+memory = "140G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/gtdbtk.yaml"
+
+[[rules]]
+name = "gtdbtk_spades_maxbin2"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MaxBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+    "intermediates/gtdbtk_db/database",
+]
+output = [
+    "intermediates/binning/gtdbtk/discarded/SPAdes-MaxBin2-{sample}.txt",
+    "intermediates/binning/gtdbtk/summaries/SPAdes-MaxBin2-{sample}",
+]
+depends_on = ["busco_spades_maxbin2", "gtdbtk_db_preparation"]
+description = "GTDB-Tk classification of the SPAdes MaxBin2 bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/gtdbtk/discarded intermediates/binning/gtdbtk/summaries/SPAdes-MaxBin2-{sample}
+# replicate the upstream Groovy QC filter: per group, read the BUSCO batch
+# summary (Input_file/Complete/Duplicated), drop negative readings and bins
+# without metrics; a bin passes if any single reading clears both thresholds
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MaxBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins" \
+    --bins-glob "SPAdes-MaxBin2-{sample}*.fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_bins.txt \
+    --out-discarded discarded_bins.txt
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned" \
+    --bins-glob "SPAdes-MaxBin2-{sample}*[0-9].fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_chunks.txt \
+    --out-discarded discarded_chunks.txt
+cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
+cp discarded_all.txt intermediates/binning/gtdbtk/discarded/SPAdes-MaxBin2-{sample}.txt
+
+export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+classify_group() {
+    # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
+    mkdir -p "$4" && cd "$4"
+    mkdir -p bins_dir
+    while read -r b; do
+        [ -z "$b" ] && continue
+        ln -sf "$wd/$2/$b" bins_dir/$b
+    done < "$wd/$1"
+    mkdir pplacer_tmp
+    gtdbtk classify_wf \
+        --extension gz \
+        --min_perc_aa {config.gtdbtk_min_perc_aa} \
+        --min_af {config.gtdbtk_min_af} \
+        --pplacer_cpus {config.gtdbtk_pplacer_cpus} \
+        --genome_dir bins_dir \
+        --prefix "$3" \
+        --out_dir "$3" \
+        --cpus {threads} \
+        --scratch_dir pplacer_tmp
+    mv "$3/gtdbtk.log" "$3/$3.log"
+    mv "$3/gtdbtk.warnings.log" "$3/$3.warnings.log"
+    cp "$3"/classify/*.summary.tsv "$wd/intermediates/binning/gtdbtk/summaries/SPAdes-MaxBin2-{sample}/"
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/SPAdes/MaxBin2/{sample}"
+    mv "$3" "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/SPAdes/MaxBin2/{sample}/"
+    cd "$wd"
+    rm -rf "$4"
+}
+if [ -s passed_bins.txt ]; then
+    classify_group passed_bins.txt "{config.out_dir}/GenomeBinning/MaxBin2/bins" "SPAdes-MaxBin2-unclassified-unrefined-{sample}" .tmp/gtdbtk_bins_spades_maxbin2_{sample}
+fi
+if [ -s passed_chunks.txt ]; then
+    classify_group passed_chunks.txt "{config.out_dir}/GenomeBinning/MaxBin2/unbinned" "SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}" .tmp/gtdbtk_chunks_spades_maxbin2_{sample}
+fi
+"""
+
+[rules.resources]
+threads = 2
+memory = "140G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/gtdbtk.yaml"
+
+[[rules]]
+name = "gtdbtk_spades_concoct"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-CONCOCT-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+    "intermediates/gtdbtk_db/database",
+]
+output = [
+    "intermediates/binning/gtdbtk/discarded/SPAdes-CONCOCT-{sample}.txt",
+    "intermediates/binning/gtdbtk/summaries/SPAdes-CONCOCT-{sample}",
+]
+depends_on = ["busco_spades_concoct", "gtdbtk_db_preparation"]
+description = "GTDB-Tk classification of the SPAdes CONCOCT bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/gtdbtk/discarded intermediates/binning/gtdbtk/summaries/SPAdes-CONCOCT-{sample}
+# replicate the upstream Groovy QC filter: per group, read the BUSCO batch
+# summary (Input_file/Complete/Duplicated), drop negative readings and bins
+# without metrics; a bin passes if any single reading clears both thresholds
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-CONCOCT-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins" \
+    --bins-glob "SPAdes-CONCOCT-{sample}*.fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_bins.txt \
+    --out-discarded discarded_bins.txt
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned" \
+    --bins-glob "SPAdes-CONCOCT-{sample}*[0-9].fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_chunks.txt \
+    --out-discarded discarded_chunks.txt
+cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
+cp discarded_all.txt intermediates/binning/gtdbtk/discarded/SPAdes-CONCOCT-{sample}.txt
+
+export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+classify_group() {
+    # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
+    mkdir -p "$4" && cd "$4"
+    mkdir -p bins_dir
+    while read -r b; do
+        [ -z "$b" ] && continue
+        ln -sf "$wd/$2/$b" bins_dir/$b
+    done < "$wd/$1"
+    mkdir pplacer_tmp
+    gtdbtk classify_wf \
+        --extension gz \
+        --min_perc_aa {config.gtdbtk_min_perc_aa} \
+        --min_af {config.gtdbtk_min_af} \
+        --pplacer_cpus {config.gtdbtk_pplacer_cpus} \
+        --genome_dir bins_dir \
+        --prefix "$3" \
+        --out_dir "$3" \
+        --cpus {threads} \
+        --scratch_dir pplacer_tmp
+    mv "$3/gtdbtk.log" "$3/$3.log"
+    mv "$3/gtdbtk.warnings.log" "$3/$3.warnings.log"
+    cp "$3"/classify/*.summary.tsv "$wd/intermediates/binning/gtdbtk/summaries/SPAdes-CONCOCT-{sample}/"
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/SPAdes/CONCOCT/{sample}"
+    mv "$3" "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/SPAdes/CONCOCT/{sample}/"
+    cd "$wd"
+    rm -rf "$4"
+}
+if [ -s passed_bins.txt ]; then
+    classify_group passed_bins.txt "{config.out_dir}/GenomeBinning/CONCOCT/bins" "SPAdes-CONCOCT-unclassified-unrefined-{sample}" .tmp/gtdbtk_bins_spades_concoct_{sample}
+fi
+if [ -s passed_chunks.txt ]; then
+    classify_group passed_chunks.txt "{config.out_dir}/GenomeBinning/CONCOCT/unbinned" "SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}" .tmp/gtdbtk_chunks_spades_concoct_{sample}
+fi
+"""
+
+[rules.resources]
+threads = 2
+memory = "140G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/gtdbtk.yaml"
+
+[[rules]]
+name = "gtdbtk_spades_comebin"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-COMEBin-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+    "intermediates/gtdbtk_db/database",
+]
+output = [
+    "intermediates/binning/gtdbtk/discarded/SPAdes-COMEBin-{sample}.txt",
+    "intermediates/binning/gtdbtk/summaries/SPAdes-COMEBin-{sample}",
+]
+depends_on = ["busco_spades_comebin", "gtdbtk_db_preparation"]
+description = "GTDB-Tk classification of the SPAdes COMEBin bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/gtdbtk/discarded intermediates/binning/gtdbtk/summaries/SPAdes-COMEBin-{sample}
+# replicate the upstream Groovy QC filter: per group, read the BUSCO batch
+# summary (Input_file/Complete/Duplicated), drop negative readings and bins
+# without metrics; a bin passes if any single reading clears both thresholds
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-COMEBin-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins" \
+    --bins-glob "SPAdes-COMEBin-{sample}*.fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_bins.txt \
+    --out-discarded discarded_bins.txt
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned" \
+    --bins-glob "SPAdes-COMEBin-{sample}*[0-9].fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_chunks.txt \
+    --out-discarded discarded_chunks.txt
+cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
+cp discarded_all.txt intermediates/binning/gtdbtk/discarded/SPAdes-COMEBin-{sample}.txt
+
+export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+classify_group() {
+    # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
+    mkdir -p "$4" && cd "$4"
+    mkdir -p bins_dir
+    while read -r b; do
+        [ -z "$b" ] && continue
+        ln -sf "$wd/$2/$b" bins_dir/$b
+    done < "$wd/$1"
+    mkdir pplacer_tmp
+    gtdbtk classify_wf \
+        --extension gz \
+        --min_perc_aa {config.gtdbtk_min_perc_aa} \
+        --min_af {config.gtdbtk_min_af} \
+        --pplacer_cpus {config.gtdbtk_pplacer_cpus} \
+        --genome_dir bins_dir \
+        --prefix "$3" \
+        --out_dir "$3" \
+        --cpus {threads} \
+        --scratch_dir pplacer_tmp
+    mv "$3/gtdbtk.log" "$3/$3.log"
+    mv "$3/gtdbtk.warnings.log" "$3/$3.warnings.log"
+    cp "$3"/classify/*.summary.tsv "$wd/intermediates/binning/gtdbtk/summaries/SPAdes-COMEBin-{sample}/"
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/SPAdes/COMEBin/{sample}"
+    mv "$3" "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/SPAdes/COMEBin/{sample}/"
+    cd "$wd"
+    rm -rf "$4"
+}
+if [ -s passed_bins.txt ]; then
+    classify_group passed_bins.txt "{config.out_dir}/GenomeBinning/COMEBin/bins" "SPAdes-COMEBin-unclassified-unrefined-{sample}" .tmp/gtdbtk_bins_spades_comebin_{sample}
+fi
+if [ -s passed_chunks.txt ]; then
+    classify_group passed_chunks.txt "{config.out_dir}/GenomeBinning/COMEBin/unbinned" "SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}" .tmp/gtdbtk_chunks_spades_comebin_{sample}
+fi
+"""
+
+[rules.resources]
+threads = 2
+memory = "140G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/gtdbtk.yaml"
+
+[[rules]]
+name = "gtdbtk_spades_metabinner"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBinner-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+    "intermediates/gtdbtk_db/database",
+]
+output = [
+    "intermediates/binning/gtdbtk/discarded/SPAdes-MetaBinner-{sample}.txt",
+    "intermediates/binning/gtdbtk/summaries/SPAdes-MetaBinner-{sample}",
+]
+depends_on = ["busco_spades_metabinner", "gtdbtk_db_preparation"]
+description = "GTDB-Tk classification of the SPAdes MetaBinner bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/gtdbtk/discarded intermediates/binning/gtdbtk/summaries/SPAdes-MetaBinner-{sample}
+# replicate the upstream Groovy QC filter: per group, read the BUSCO batch
+# summary (Input_file/Complete/Duplicated), drop negative readings and bins
+# without metrics; a bin passes if any single reading clears both thresholds
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBinner-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins" \
+    --bins-glob "SPAdes-MetaBinner-{sample}*.fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_bins.txt \
+    --out-discarded discarded_bins.txt
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned" \
+    --bins-glob "SPAdes-MetaBinner-{sample}*[0-9].fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_chunks.txt \
+    --out-discarded discarded_chunks.txt
+cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
+cp discarded_all.txt intermediates/binning/gtdbtk/discarded/SPAdes-MetaBinner-{sample}.txt
+
+export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+classify_group() {
+    # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
+    mkdir -p "$4" && cd "$4"
+    mkdir -p bins_dir
+    while read -r b; do
+        [ -z "$b" ] && continue
+        ln -sf "$wd/$2/$b" bins_dir/$b
+    done < "$wd/$1"
+    mkdir pplacer_tmp
+    gtdbtk classify_wf \
+        --extension gz \
+        --min_perc_aa {config.gtdbtk_min_perc_aa} \
+        --min_af {config.gtdbtk_min_af} \
+        --pplacer_cpus {config.gtdbtk_pplacer_cpus} \
+        --genome_dir bins_dir \
+        --prefix "$3" \
+        --out_dir "$3" \
+        --cpus {threads} \
+        --scratch_dir pplacer_tmp
+    mv "$3/gtdbtk.log" "$3/$3.log"
+    mv "$3/gtdbtk.warnings.log" "$3/$3.warnings.log"
+    cp "$3"/classify/*.summary.tsv "$wd/intermediates/binning/gtdbtk/summaries/SPAdes-MetaBinner-{sample}/"
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/SPAdes/MetaBinner/{sample}"
+    mv "$3" "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/SPAdes/MetaBinner/{sample}/"
+    cd "$wd"
+    rm -rf "$4"
+}
+if [ -s passed_bins.txt ]; then
+    classify_group passed_bins.txt "{config.out_dir}/GenomeBinning/MetaBinner/bins" "SPAdes-MetaBinner-unclassified-unrefined-{sample}" .tmp/gtdbtk_bins_spades_metabinner_{sample}
+fi
+if [ -s passed_chunks.txt ]; then
+    classify_group passed_chunks.txt "{config.out_dir}/GenomeBinning/MetaBinner/unbinned" "SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}" .tmp/gtdbtk_chunks_spades_metabinner_{sample}
+fi
+"""
+
+[rules.resources]
+threads = 2
+memory = "140G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/gtdbtk.yaml"
+
+[[rules]]
+name = "gtdbtk_spades_semibin2"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-SemiBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+    "intermediates/gtdbtk_db/database",
+]
+output = [
+    "intermediates/binning/gtdbtk/discarded/SPAdes-SemiBin2-{sample}.txt",
+    "intermediates/binning/gtdbtk/summaries/SPAdes-SemiBin2-{sample}",
+]
+depends_on = ["busco_spades_semibin2", "gtdbtk_db_preparation"]
+description = "GTDB-Tk classification of the SPAdes SemiBin2 bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/gtdbtk/discarded intermediates/binning/gtdbtk/summaries/SPAdes-SemiBin2-{sample}
+# replicate the upstream Groovy QC filter: per group, read the BUSCO batch
+# summary (Input_file/Complete/Duplicated), drop negative readings and bins
+# without metrics; a bin passes if any single reading clears both thresholds
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-SemiBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins" \
+    --bins-glob "SPAdes-SemiBin2-{sample}*.fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_bins.txt \
+    --out-discarded discarded_bins.txt
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned" \
+    --bins-glob "SPAdes-SemiBin2-{sample}*[0-9].fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_chunks.txt \
+    --out-discarded discarded_chunks.txt
+cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
+cp discarded_all.txt intermediates/binning/gtdbtk/discarded/SPAdes-SemiBin2-{sample}.txt
+
+export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+classify_group() {
+    # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
+    mkdir -p "$4" && cd "$4"
+    mkdir -p bins_dir
+    while read -r b; do
+        [ -z "$b" ] && continue
+        ln -sf "$wd/$2/$b" bins_dir/$b
+    done < "$wd/$1"
+    mkdir pplacer_tmp
+    gtdbtk classify_wf \
+        --extension gz \
+        --min_perc_aa {config.gtdbtk_min_perc_aa} \
+        --min_af {config.gtdbtk_min_af} \
+        --pplacer_cpus {config.gtdbtk_pplacer_cpus} \
+        --genome_dir bins_dir \
+        --prefix "$3" \
+        --out_dir "$3" \
+        --cpus {threads} \
+        --scratch_dir pplacer_tmp
+    mv "$3/gtdbtk.log" "$3/$3.log"
+    mv "$3/gtdbtk.warnings.log" "$3/$3.warnings.log"
+    cp "$3"/classify/*.summary.tsv "$wd/intermediates/binning/gtdbtk/summaries/SPAdes-SemiBin2-{sample}/"
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/SPAdes/SemiBin2/{sample}"
+    mv "$3" "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/SPAdes/SemiBin2/{sample}/"
+    cd "$wd"
+    rm -rf "$4"
+}
+if [ -s passed_bins.txt ]; then
+    classify_group passed_bins.txt "{config.out_dir}/GenomeBinning/SemiBin2/bins" "SPAdes-SemiBin2-unclassified-unrefined-{sample}" .tmp/gtdbtk_bins_spades_semibin2_{sample}
+fi
+if [ -s passed_chunks.txt ]; then
+    classify_group passed_chunks.txt "{config.out_dir}/GenomeBinning/SemiBin2/unbinned" "SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}" .tmp/gtdbtk_chunks_spades_semibin2_{sample}
+fi
+"""
+
+[rules.resources]
+threads = 2
+memory = "140G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/gtdbtk.yaml"
+
+[[rules]]
+name = "gtdbtk_megahit_metabat2"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+    "intermediates/gtdbtk_db/database",
+]
+output = [
+    "intermediates/binning/gtdbtk/discarded/MEGAHIT-MetaBAT2-{sample}.txt",
+    "intermediates/binning/gtdbtk/summaries/MEGAHIT-MetaBAT2-{sample}",
+]
+depends_on = ["busco_megahit_metabat2", "gtdbtk_db_preparation"]
+description = "GTDB-Tk classification of the MEGAHIT MetaBAT2 bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/gtdbtk/discarded intermediates/binning/gtdbtk/summaries/MEGAHIT-MetaBAT2-{sample}
+# replicate the upstream Groovy QC filter: per group, read the BUSCO batch
+# summary (Input_file/Complete/Duplicated), drop negative readings and bins
+# without metrics; a bin passes if any single reading clears both thresholds
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins" \
+    --bins-glob "MEGAHIT-MetaBAT2-{sample}*.fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_bins.txt \
+    --out-discarded discarded_bins.txt
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned" \
+    --bins-glob "MEGAHIT-MetaBAT2-{sample}*[0-9].fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_chunks.txt \
+    --out-discarded discarded_chunks.txt
+cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
+cp discarded_all.txt intermediates/binning/gtdbtk/discarded/MEGAHIT-MetaBAT2-{sample}.txt
+
+export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+classify_group() {
+    # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
+    mkdir -p "$4" && cd "$4"
+    mkdir -p bins_dir
+    while read -r b; do
+        [ -z "$b" ] && continue
+        ln -sf "$wd/$2/$b" bins_dir/$b
+    done < "$wd/$1"
+    mkdir pplacer_tmp
+    gtdbtk classify_wf \
+        --extension gz \
+        --min_perc_aa {config.gtdbtk_min_perc_aa} \
+        --min_af {config.gtdbtk_min_af} \
+        --pplacer_cpus {config.gtdbtk_pplacer_cpus} \
+        --genome_dir bins_dir \
+        --prefix "$3" \
+        --out_dir "$3" \
+        --cpus {threads} \
+        --scratch_dir pplacer_tmp
+    mv "$3/gtdbtk.log" "$3/$3.log"
+    mv "$3/gtdbtk.warnings.log" "$3/$3.warnings.log"
+    cp "$3"/classify/*.summary.tsv "$wd/intermediates/binning/gtdbtk/summaries/MEGAHIT-MetaBAT2-{sample}/"
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/MEGAHIT/MetaBAT2/{sample}"
+    mv "$3" "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/MEGAHIT/MetaBAT2/{sample}/"
+    cd "$wd"
+    rm -rf "$4"
+}
+if [ -s passed_bins.txt ]; then
+    classify_group passed_bins.txt "{config.out_dir}/GenomeBinning/MetaBAT2/bins" "MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}" .tmp/gtdbtk_bins_megahit_metabat2_{sample}
+fi
+if [ -s passed_chunks.txt ]; then
+    classify_group passed_chunks.txt "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned" "MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}" .tmp/gtdbtk_chunks_megahit_metabat2_{sample}
+fi
+"""
+
+[rules.resources]
+threads = 2
+memory = "140G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/gtdbtk.yaml"
+
+[[rules]]
+name = "gtdbtk_megahit_maxbin2"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+    "intermediates/gtdbtk_db/database",
+]
+output = [
+    "intermediates/binning/gtdbtk/discarded/MEGAHIT-MaxBin2-{sample}.txt",
+    "intermediates/binning/gtdbtk/summaries/MEGAHIT-MaxBin2-{sample}",
+]
+depends_on = ["busco_megahit_maxbin2", "gtdbtk_db_preparation"]
+description = "GTDB-Tk classification of the MEGAHIT MaxBin2 bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/gtdbtk/discarded intermediates/binning/gtdbtk/summaries/MEGAHIT-MaxBin2-{sample}
+# replicate the upstream Groovy QC filter: per group, read the BUSCO batch
+# summary (Input_file/Complete/Duplicated), drop negative readings and bins
+# without metrics; a bin passes if any single reading clears both thresholds
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins" \
+    --bins-glob "MEGAHIT-MaxBin2-{sample}*.fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_bins.txt \
+    --out-discarded discarded_bins.txt
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned" \
+    --bins-glob "MEGAHIT-MaxBin2-{sample}*[0-9].fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_chunks.txt \
+    --out-discarded discarded_chunks.txt
+cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
+cp discarded_all.txt intermediates/binning/gtdbtk/discarded/MEGAHIT-MaxBin2-{sample}.txt
+
+export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+classify_group() {
+    # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
+    mkdir -p "$4" && cd "$4"
+    mkdir -p bins_dir
+    while read -r b; do
+        [ -z "$b" ] && continue
+        ln -sf "$wd/$2/$b" bins_dir/$b
+    done < "$wd/$1"
+    mkdir pplacer_tmp
+    gtdbtk classify_wf \
+        --extension gz \
+        --min_perc_aa {config.gtdbtk_min_perc_aa} \
+        --min_af {config.gtdbtk_min_af} \
+        --pplacer_cpus {config.gtdbtk_pplacer_cpus} \
+        --genome_dir bins_dir \
+        --prefix "$3" \
+        --out_dir "$3" \
+        --cpus {threads} \
+        --scratch_dir pplacer_tmp
+    mv "$3/gtdbtk.log" "$3/$3.log"
+    mv "$3/gtdbtk.warnings.log" "$3/$3.warnings.log"
+    cp "$3"/classify/*.summary.tsv "$wd/intermediates/binning/gtdbtk/summaries/MEGAHIT-MaxBin2-{sample}/"
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/MEGAHIT/MaxBin2/{sample}"
+    mv "$3" "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/MEGAHIT/MaxBin2/{sample}/"
+    cd "$wd"
+    rm -rf "$4"
+}
+if [ -s passed_bins.txt ]; then
+    classify_group passed_bins.txt "{config.out_dir}/GenomeBinning/MaxBin2/bins" "MEGAHIT-MaxBin2-unclassified-unrefined-{sample}" .tmp/gtdbtk_bins_megahit_maxbin2_{sample}
+fi
+if [ -s passed_chunks.txt ]; then
+    classify_group passed_chunks.txt "{config.out_dir}/GenomeBinning/MaxBin2/unbinned" "MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}" .tmp/gtdbtk_chunks_megahit_maxbin2_{sample}
+fi
+"""
+
+[rules.resources]
+threads = 2
+memory = "140G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/gtdbtk.yaml"
+
+[[rules]]
+name = "gtdbtk_megahit_concoct"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+    "intermediates/gtdbtk_db/database",
+]
+output = [
+    "intermediates/binning/gtdbtk/discarded/MEGAHIT-CONCOCT-{sample}.txt",
+    "intermediates/binning/gtdbtk/summaries/MEGAHIT-CONCOCT-{sample}",
+]
+depends_on = ["busco_megahit_concoct", "gtdbtk_db_preparation"]
+description = "GTDB-Tk classification of the MEGAHIT CONCOCT bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/gtdbtk/discarded intermediates/binning/gtdbtk/summaries/MEGAHIT-CONCOCT-{sample}
+# replicate the upstream Groovy QC filter: per group, read the BUSCO batch
+# summary (Input_file/Complete/Duplicated), drop negative readings and bins
+# without metrics; a bin passes if any single reading clears both thresholds
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins" \
+    --bins-glob "MEGAHIT-CONCOCT-{sample}*.fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_bins.txt \
+    --out-discarded discarded_bins.txt
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned" \
+    --bins-glob "MEGAHIT-CONCOCT-{sample}*[0-9].fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_chunks.txt \
+    --out-discarded discarded_chunks.txt
+cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
+cp discarded_all.txt intermediates/binning/gtdbtk/discarded/MEGAHIT-CONCOCT-{sample}.txt
+
+export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+classify_group() {
+    # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
+    mkdir -p "$4" && cd "$4"
+    mkdir -p bins_dir
+    while read -r b; do
+        [ -z "$b" ] && continue
+        ln -sf "$wd/$2/$b" bins_dir/$b
+    done < "$wd/$1"
+    mkdir pplacer_tmp
+    gtdbtk classify_wf \
+        --extension gz \
+        --min_perc_aa {config.gtdbtk_min_perc_aa} \
+        --min_af {config.gtdbtk_min_af} \
+        --pplacer_cpus {config.gtdbtk_pplacer_cpus} \
+        --genome_dir bins_dir \
+        --prefix "$3" \
+        --out_dir "$3" \
+        --cpus {threads} \
+        --scratch_dir pplacer_tmp
+    mv "$3/gtdbtk.log" "$3/$3.log"
+    mv "$3/gtdbtk.warnings.log" "$3/$3.warnings.log"
+    cp "$3"/classify/*.summary.tsv "$wd/intermediates/binning/gtdbtk/summaries/MEGAHIT-CONCOCT-{sample}/"
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/MEGAHIT/CONCOCT/{sample}"
+    mv "$3" "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/MEGAHIT/CONCOCT/{sample}/"
+    cd "$wd"
+    rm -rf "$4"
+}
+if [ -s passed_bins.txt ]; then
+    classify_group passed_bins.txt "{config.out_dir}/GenomeBinning/CONCOCT/bins" "MEGAHIT-CONCOCT-unclassified-unrefined-{sample}" .tmp/gtdbtk_bins_megahit_concoct_{sample}
+fi
+if [ -s passed_chunks.txt ]; then
+    classify_group passed_chunks.txt "{config.out_dir}/GenomeBinning/CONCOCT/unbinned" "MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}" .tmp/gtdbtk_chunks_megahit_concoct_{sample}
+fi
+"""
+
+[rules.resources]
+threads = 2
+memory = "140G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/gtdbtk.yaml"
+
+[[rules]]
+name = "gtdbtk_megahit_comebin"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-COMEBin-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+    "intermediates/gtdbtk_db/database",
+]
+output = [
+    "intermediates/binning/gtdbtk/discarded/MEGAHIT-COMEBin-{sample}.txt",
+    "intermediates/binning/gtdbtk/summaries/MEGAHIT-COMEBin-{sample}",
+]
+depends_on = ["busco_megahit_comebin", "gtdbtk_db_preparation"]
+description = "GTDB-Tk classification of the MEGAHIT COMEBin bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/gtdbtk/discarded intermediates/binning/gtdbtk/summaries/MEGAHIT-COMEBin-{sample}
+# replicate the upstream Groovy QC filter: per group, read the BUSCO batch
+# summary (Input_file/Complete/Duplicated), drop negative readings and bins
+# without metrics; a bin passes if any single reading clears both thresholds
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-COMEBin-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins" \
+    --bins-glob "MEGAHIT-COMEBin-{sample}*.fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_bins.txt \
+    --out-discarded discarded_bins.txt
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned" \
+    --bins-glob "MEGAHIT-COMEBin-{sample}*[0-9].fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_chunks.txt \
+    --out-discarded discarded_chunks.txt
+cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
+cp discarded_all.txt intermediates/binning/gtdbtk/discarded/MEGAHIT-COMEBin-{sample}.txt
+
+export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+classify_group() {
+    # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
+    mkdir -p "$4" && cd "$4"
+    mkdir -p bins_dir
+    while read -r b; do
+        [ -z "$b" ] && continue
+        ln -sf "$wd/$2/$b" bins_dir/$b
+    done < "$wd/$1"
+    mkdir pplacer_tmp
+    gtdbtk classify_wf \
+        --extension gz \
+        --min_perc_aa {config.gtdbtk_min_perc_aa} \
+        --min_af {config.gtdbtk_min_af} \
+        --pplacer_cpus {config.gtdbtk_pplacer_cpus} \
+        --genome_dir bins_dir \
+        --prefix "$3" \
+        --out_dir "$3" \
+        --cpus {threads} \
+        --scratch_dir pplacer_tmp
+    mv "$3/gtdbtk.log" "$3/$3.log"
+    mv "$3/gtdbtk.warnings.log" "$3/$3.warnings.log"
+    cp "$3"/classify/*.summary.tsv "$wd/intermediates/binning/gtdbtk/summaries/MEGAHIT-COMEBin-{sample}/"
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/MEGAHIT/COMEBin/{sample}"
+    mv "$3" "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/MEGAHIT/COMEBin/{sample}/"
+    cd "$wd"
+    rm -rf "$4"
+}
+if [ -s passed_bins.txt ]; then
+    classify_group passed_bins.txt "{config.out_dir}/GenomeBinning/COMEBin/bins" "MEGAHIT-COMEBin-unclassified-unrefined-{sample}" .tmp/gtdbtk_bins_megahit_comebin_{sample}
+fi
+if [ -s passed_chunks.txt ]; then
+    classify_group passed_chunks.txt "{config.out_dir}/GenomeBinning/COMEBin/unbinned" "MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}" .tmp/gtdbtk_chunks_megahit_comebin_{sample}
+fi
+"""
+
+[rules.resources]
+threads = 2
+memory = "140G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/gtdbtk.yaml"
+
+[[rules]]
+name = "gtdbtk_megahit_metabinner"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+    "intermediates/gtdbtk_db/database",
+]
+output = [
+    "intermediates/binning/gtdbtk/discarded/MEGAHIT-MetaBinner-{sample}.txt",
+    "intermediates/binning/gtdbtk/summaries/MEGAHIT-MetaBinner-{sample}",
+]
+depends_on = ["busco_megahit_metabinner", "gtdbtk_db_preparation"]
+description = "GTDB-Tk classification of the MEGAHIT MetaBinner bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/gtdbtk/discarded intermediates/binning/gtdbtk/summaries/MEGAHIT-MetaBinner-{sample}
+# replicate the upstream Groovy QC filter: per group, read the BUSCO batch
+# summary (Input_file/Complete/Duplicated), drop negative readings and bins
+# without metrics; a bin passes if any single reading clears both thresholds
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins" \
+    --bins-glob "MEGAHIT-MetaBinner-{sample}*.fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_bins.txt \
+    --out-discarded discarded_bins.txt
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned" \
+    --bins-glob "MEGAHIT-MetaBinner-{sample}*[0-9].fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_chunks.txt \
+    --out-discarded discarded_chunks.txt
+cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
+cp discarded_all.txt intermediates/binning/gtdbtk/discarded/MEGAHIT-MetaBinner-{sample}.txt
+
+export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+classify_group() {
+    # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
+    mkdir -p "$4" && cd "$4"
+    mkdir -p bins_dir
+    while read -r b; do
+        [ -z "$b" ] && continue
+        ln -sf "$wd/$2/$b" bins_dir/$b
+    done < "$wd/$1"
+    mkdir pplacer_tmp
+    gtdbtk classify_wf \
+        --extension gz \
+        --min_perc_aa {config.gtdbtk_min_perc_aa} \
+        --min_af {config.gtdbtk_min_af} \
+        --pplacer_cpus {config.gtdbtk_pplacer_cpus} \
+        --genome_dir bins_dir \
+        --prefix "$3" \
+        --out_dir "$3" \
+        --cpus {threads} \
+        --scratch_dir pplacer_tmp
+    mv "$3/gtdbtk.log" "$3/$3.log"
+    mv "$3/gtdbtk.warnings.log" "$3/$3.warnings.log"
+    cp "$3"/classify/*.summary.tsv "$wd/intermediates/binning/gtdbtk/summaries/MEGAHIT-MetaBinner-{sample}/"
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/MEGAHIT/MetaBinner/{sample}"
+    mv "$3" "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/MEGAHIT/MetaBinner/{sample}/"
+    cd "$wd"
+    rm -rf "$4"
+}
+if [ -s passed_bins.txt ]; then
+    classify_group passed_bins.txt "{config.out_dir}/GenomeBinning/MetaBinner/bins" "MEGAHIT-MetaBinner-unclassified-unrefined-{sample}" .tmp/gtdbtk_bins_megahit_metabinner_{sample}
+fi
+if [ -s passed_chunks.txt ]; then
+    classify_group passed_chunks.txt "{config.out_dir}/GenomeBinning/MetaBinner/unbinned" "MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}" .tmp/gtdbtk_chunks_megahit_metabinner_{sample}
+fi
+"""
+
+[rules.resources]
+threads = 2
+memory = "140G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/gtdbtk.yaml"
+
+[[rules]]
+name = "gtdbtk_megahit_semibin2"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+    "intermediates/gtdbtk_db/database",
+]
+output = [
+    "intermediates/binning/gtdbtk/discarded/MEGAHIT-SemiBin2-{sample}.txt",
+    "intermediates/binning/gtdbtk/summaries/MEGAHIT-SemiBin2-{sample}",
+]
+depends_on = ["busco_megahit_semibin2", "gtdbtk_db_preparation"]
+description = "GTDB-Tk classification of the MEGAHIT SemiBin2 bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/gtdbtk/discarded intermediates/binning/gtdbtk/summaries/MEGAHIT-SemiBin2-{sample}
+# replicate the upstream Groovy QC filter: per group, read the BUSCO batch
+# summary (Input_file/Complete/Duplicated), drop negative readings and bins
+# without metrics; a bin passes if any single reading clears both thresholds
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins" \
+    --bins-glob "MEGAHIT-SemiBin2-{sample}*.fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_bins.txt \
+    --out-discarded discarded_bins.txt
+python "$wd/scripts/filter_bins_by_qc.py" \
+    --batch-summary "$wd/{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt" \
+    --bins-dir "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned" \
+    --bins-glob "MEGAHIT-SemiBin2-{sample}*[0-9].fa.gz" \
+    --min-completeness {config.gtdbtk_min_completeness} \
+    --max-contamination {config.gtdbtk_max_contamination} \
+    --out-passed passed_chunks.txt \
+    --out-discarded discarded_chunks.txt
+cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
+cp discarded_all.txt intermediates/binning/gtdbtk/discarded/MEGAHIT-SemiBin2-{sample}.txt
+
+export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+classify_group() {
+    # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
+    mkdir -p "$4" && cd "$4"
+    mkdir -p bins_dir
+    while read -r b; do
+        [ -z "$b" ] && continue
+        ln -sf "$wd/$2/$b" bins_dir/$b
+    done < "$wd/$1"
+    mkdir pplacer_tmp
+    gtdbtk classify_wf \
+        --extension gz \
+        --min_perc_aa {config.gtdbtk_min_perc_aa} \
+        --min_af {config.gtdbtk_min_af} \
+        --pplacer_cpus {config.gtdbtk_pplacer_cpus} \
+        --genome_dir bins_dir \
+        --prefix "$3" \
+        --out_dir "$3" \
+        --cpus {threads} \
+        --scratch_dir pplacer_tmp
+    mv "$3/gtdbtk.log" "$3/$3.log"
+    mv "$3/gtdbtk.warnings.log" "$3/$3.warnings.log"
+    cp "$3"/classify/*.summary.tsv "$wd/intermediates/binning/gtdbtk/summaries/MEGAHIT-SemiBin2-{sample}/"
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/MEGAHIT/SemiBin2/{sample}"
+    mv "$3" "$wd/{config.out_dir}/Taxonomy/GTDB-Tk/MEGAHIT/SemiBin2/{sample}/"
+    cd "$wd"
+    rm -rf "$4"
+}
+if [ -s passed_bins.txt ]; then
+    classify_group passed_bins.txt "{config.out_dir}/GenomeBinning/SemiBin2/bins" "MEGAHIT-SemiBin2-unclassified-unrefined-{sample}" .tmp/gtdbtk_bins_megahit_semibin2_{sample}
+fi
+if [ -s passed_chunks.txt ]; then
+    classify_group passed_chunks.txt "{config.out_dir}/GenomeBinning/SemiBin2/unbinned" "MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}" .tmp/gtdbtk_chunks_megahit_semibin2_{sample}
+fi
+"""
+
+[rules.resources]
+threads = 2
+memory = "140G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/gtdbtk.yaml"
+
+# ---------------------------------------------------------------------------
+# GTDBTK_SUMMARY: combine the classify_wf summaries with the QC-discarded
+# bins into one table (upstream GTDBTK_SUMMARY, summary_gtdbtk.py)
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "gtdbtk_summary"
+input = [
+    "intermediates/binning/gtdbtk/discarded",
+    "intermediates/binning/gtdbtk/summaries",
+]
+output = ["{config.out_dir}/Taxonomy/GTDB-Tk/gtdbtk_summary.tsv"]
+depends_on = [
+    "gtdbtk_spades_metabat2",
+    "gtdbtk_spades_maxbin2",
+    "gtdbtk_spades_concoct",
+    "gtdbtk_spades_comebin",
+    "gtdbtk_spades_metabinner",
+    "gtdbtk_spades_semibin2",
+    "gtdbtk_megahit_metabat2",
+    "gtdbtk_megahit_maxbin2",
+    "gtdbtk_megahit_concoct",
+    "gtdbtk_megahit_comebin",
+    "gtdbtk_megahit_metabinner",
+    "gtdbtk_megahit_semibin2"
+]
+description = "Combine GTDB-Tk classification and QC-discarded bins into one table (upstream GTDBTK_SUMMARY)"
+shell = """
+mkdir -p {config.out_dir}/Taxonomy/GTDB-Tk
+args_d=""
+if ls intermediates/binning/gtdbtk/discarded/*.txt >/dev/null 2>&1; then
+    cat intermediates/binning/gtdbtk/discarded/*.txt > discarded_all.txt
+    if [ -s discarded_all.txt ]; then
+        args_d="-d $(tr '\n' ' ' < discarded_all.txt)"
+    fi
+fi
+args_s=""
+if ls intermediates/binning/gtdbtk/summaries/*/*.summary.tsv >/dev/null 2>&1; then
+    args_s="-s $(ls intermediates/binning/gtdbtk/summaries/*/*.summary.tsv | tr '\n' ' ')"
+fi
+if [ -n "$args_d" ] || [ -n "$args_s" ]; then
+    summary_gtdbtk.py -x gz $args_d $args_s --out gtdbtk_summary.tsv
+else
+    touch gtdbtk_summary.tsv
+fi
+mv gtdbtk_summary.tsv {config.out_dir}/Taxonomy/GTDB-Tk/
+"""
+
+[rules.resources]
+threads = 1
+memory = "7G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gtdbtk_summary.yaml"
+
+# ---------------------------------------------------------------------------
+# BIN_SUMMARY: combine the depth, QUAST, BUSCO and GTDB-Tk tables into the
+# final bin_summary.tsv (upstream BIN_SUMMARY, combine_tables.py)
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "bin_summary"
+input = [
+    "{config.out_dir}/GenomeBinning/depths/bins/bin_depths_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/quast_bin_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/busco_summary.tsv",
+    "{config.out_dir}/Taxonomy/GTDB-Tk/gtdbtk_summary.tsv",
+]
+output = ["{config.out_dir}/GenomeBinning/bin_summary.tsv"]
+depends_on = ["mag_depths_summary", "concat_quast", "concat_busco", "gtdbtk_summary"]
+description = "Combine the bin QC and taxonomy tables into one summary (upstream BIN_SUMMARY)"
+shell = """
+args_quast=""
+[ -s "{input[1]}" ] && args_quast="--quast_summary {input[1]}"
+args_busco=""
+[ -s "{input[2]}" ] && args_busco="--busco_summary {input[2]}"
+args_gtdbtk=""
+[ -s "{input[3]}" ] && args_gtdbtk="--gtdbtk_summary {input[3]}"
+combine_tables.py \
+    --depths_summary {input[0]} \
+    $args_quast \
+    $args_busco \
+    $args_gtdbtk \
+    --out bin_summary.tsv
+mv bin_summary.tsv {config.out_dir}/GenomeBinning/
+"""
+
+[rules.resources]
+threads = 1
+memory = "7G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/bin_summary.yaml"
+
+# ---------------------------------------------------------------------------
+# PROKKA (upstream runs one PROKKA process per bin, meta.id = bin name
+# minus the fasta extension; publish results/Annotation/Prokka/{assembler}/)
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "prokka_spades_metabat2"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = ["{config.out_dir}/Annotation/Prokka/SPAdes"]
+depends_on = ["metabat2_spades", "split_fasta_metabat2_spades"]
+description = "PROKKA annotation of the SPAdes MetaBAT2 bins and chunks (upstream PROKKA, one process per bin)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/prokka_spades_metabat2_{sample} && cd .tmp/prokka_spades_metabat2_{sample}
+mkdir -p "$wd/{config.out_dir}/Annotation/Prokka/SPAdes"
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/SPAdes-MetaBAT2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    prokka --metagenome --cpus {threads} --prefix "$prefix" "$prefix.fa"
+    mv $prefix/* "$wd/{config.out_dir}/Annotation/Prokka/SPAdes/"
+    rm -rf $prefix "$prefix.fa"
+done
+cd "$wd"
+rm -rf .tmp/prokka_spades_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prokka.yaml"
+
+[[rules]]
+name = "prokka_spades_maxbin2"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = ["{config.out_dir}/Annotation/Prokka/SPAdes"]
+depends_on = ["maxbin2_spades", "split_fasta_maxbin2_spades"]
+description = "PROKKA annotation of the SPAdes MaxBin2 bins and chunks (upstream PROKKA, one process per bin)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/prokka_spades_maxbin2_{sample} && cd .tmp/prokka_spades_maxbin2_{sample}
+mkdir -p "$wd/{config.out_dir}/Annotation/Prokka/SPAdes"
+for f in "$wd"/{config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/SPAdes-MaxBin2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    prokka --metagenome --cpus {threads} --prefix "$prefix" "$prefix.fa"
+    mv $prefix/* "$wd/{config.out_dir}/Annotation/Prokka/SPAdes/"
+    rm -rf $prefix "$prefix.fa"
+done
+cd "$wd"
+rm -rf .tmp/prokka_spades_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prokka.yaml"
+
+[[rules]]
+name = "prokka_spades_concoct"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+]
+output = ["{config.out_dir}/Annotation/Prokka/SPAdes"]
+depends_on = ["concoct_extract_spades"]
+description = "PROKKA annotation of the SPAdes CONCOCT bins and chunks (upstream PROKKA, one process per bin)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/prokka_spades_concoct_{sample} && cd .tmp/prokka_spades_concoct_{sample}
+mkdir -p "$wd/{config.out_dir}/Annotation/Prokka/SPAdes"
+for f in "$wd"/{config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/SPAdes-CONCOCT-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    prokka --metagenome --cpus {threads} --prefix "$prefix" "$prefix.fa"
+    mv $prefix/* "$wd/{config.out_dir}/Annotation/Prokka/SPAdes/"
+    rm -rf $prefix "$prefix.fa"
+done
+cd "$wd"
+rm -rf .tmp/prokka_spades_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prokka.yaml"
+
+[[rules]]
+name = "prokka_spades_comebin"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+]
+output = ["{config.out_dir}/Annotation/Prokka/SPAdes"]
+depends_on = ["comebin_spades"]
+description = "PROKKA annotation of the SPAdes COMEBin bins and chunks (upstream PROKKA, one process per bin)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/prokka_spades_comebin_{sample} && cd .tmp/prokka_spades_comebin_{sample}
+mkdir -p "$wd/{config.out_dir}/Annotation/Prokka/SPAdes"
+for f in "$wd"/{config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/COMEBin/unbinned/SPAdes-COMEBin-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    prokka --metagenome --cpus {threads} --prefix "$prefix" "$prefix.fa"
+    mv $prefix/* "$wd/{config.out_dir}/Annotation/Prokka/SPAdes/"
+    rm -rf $prefix "$prefix.fa"
+done
+cd "$wd"
+rm -rf .tmp/prokka_spades_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prokka.yaml"
+
+[[rules]]
+name = "prokka_spades_metabinner"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = ["{config.out_dir}/Annotation/Prokka/SPAdes"]
+depends_on = ["metabinner_bins_spades", "split_fasta_metabinner_spades"]
+description = "PROKKA annotation of the SPAdes MetaBinner bins and chunks (upstream PROKKA, one process per bin)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/prokka_spades_metabinner_{sample} && cd .tmp/prokka_spades_metabinner_{sample}
+mkdir -p "$wd/{config.out_dir}/Annotation/Prokka/SPAdes"
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/SPAdes-MetaBinner-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    prokka --metagenome --cpus {threads} --prefix "$prefix" "$prefix.fa"
+    mv $prefix/* "$wd/{config.out_dir}/Annotation/Prokka/SPAdes/"
+    rm -rf $prefix "$prefix.fa"
+done
+cd "$wd"
+rm -rf .tmp/prokka_spades_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prokka.yaml"
+
+[[rules]]
+name = "prokka_spades_semibin2"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+]
+output = ["{config.out_dir}/Annotation/Prokka/SPAdes"]
+depends_on = ["semibin_spades"]
+description = "PROKKA annotation of the SPAdes SemiBin2 bins and chunks (upstream PROKKA, one process per bin)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/prokka_spades_semibin2_{sample} && cd .tmp/prokka_spades_semibin2_{sample}
+mkdir -p "$wd/{config.out_dir}/Annotation/Prokka/SPAdes"
+for f in "$wd"/{config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/SPAdes-SemiBin2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    prokka --metagenome --cpus {threads} --prefix "$prefix" "$prefix.fa"
+    mv $prefix/* "$wd/{config.out_dir}/Annotation/Prokka/SPAdes/"
+    rm -rf $prefix "$prefix.fa"
+done
+cd "$wd"
+rm -rf .tmp/prokka_spades_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prokka.yaml"
+
+[[rules]]
+name = "prokka_megahit_metabat2"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = ["{config.out_dir}/Annotation/Prokka/MEGAHIT"]
+depends_on = ["metabat2_megahit", "split_fasta_metabat2_megahit"]
+description = "PROKKA annotation of the MEGAHIT MetaBAT2 bins and chunks (upstream PROKKA, one process per bin)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/prokka_megahit_metabat2_{sample} && cd .tmp/prokka_megahit_metabat2_{sample}
+mkdir -p "$wd/{config.out_dir}/Annotation/Prokka/MEGAHIT"
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/MEGAHIT-MetaBAT2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    prokka --metagenome --cpus {threads} --prefix "$prefix" "$prefix.fa"
+    mv $prefix/* "$wd/{config.out_dir}/Annotation/Prokka/MEGAHIT/"
+    rm -rf $prefix "$prefix.fa"
+done
+cd "$wd"
+rm -rf .tmp/prokka_megahit_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prokka.yaml"
+
+[[rules]]
+name = "prokka_megahit_maxbin2"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = ["{config.out_dir}/Annotation/Prokka/MEGAHIT"]
+depends_on = ["maxbin2_megahit", "split_fasta_maxbin2_megahit"]
+description = "PROKKA annotation of the MEGAHIT MaxBin2 bins and chunks (upstream PROKKA, one process per bin)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/prokka_megahit_maxbin2_{sample} && cd .tmp/prokka_megahit_maxbin2_{sample}
+mkdir -p "$wd/{config.out_dir}/Annotation/Prokka/MEGAHIT"
+for f in "$wd"/{config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/MEGAHIT-MaxBin2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    prokka --metagenome --cpus {threads} --prefix "$prefix" "$prefix.fa"
+    mv $prefix/* "$wd/{config.out_dir}/Annotation/Prokka/MEGAHIT/"
+    rm -rf $prefix "$prefix.fa"
+done
+cd "$wd"
+rm -rf .tmp/prokka_megahit_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prokka.yaml"
+
+[[rules]]
+name = "prokka_megahit_concoct"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+]
+output = ["{config.out_dir}/Annotation/Prokka/MEGAHIT"]
+depends_on = ["concoct_extract_megahit"]
+description = "PROKKA annotation of the MEGAHIT CONCOCT bins and chunks (upstream PROKKA, one process per bin)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/prokka_megahit_concoct_{sample} && cd .tmp/prokka_megahit_concoct_{sample}
+mkdir -p "$wd/{config.out_dir}/Annotation/Prokka/MEGAHIT"
+for f in "$wd"/{config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/MEGAHIT-CONCOCT-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    prokka --metagenome --cpus {threads} --prefix "$prefix" "$prefix.fa"
+    mv $prefix/* "$wd/{config.out_dir}/Annotation/Prokka/MEGAHIT/"
+    rm -rf $prefix "$prefix.fa"
+done
+cd "$wd"
+rm -rf .tmp/prokka_megahit_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prokka.yaml"
+
+[[rules]]
+name = "prokka_megahit_comebin"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+]
+output = ["{config.out_dir}/Annotation/Prokka/MEGAHIT"]
+depends_on = ["comebin_megahit"]
+description = "PROKKA annotation of the MEGAHIT COMEBin bins and chunks (upstream PROKKA, one process per bin)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/prokka_megahit_comebin_{sample} && cd .tmp/prokka_megahit_comebin_{sample}
+mkdir -p "$wd/{config.out_dir}/Annotation/Prokka/MEGAHIT"
+for f in "$wd"/{config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/COMEBin/unbinned/MEGAHIT-COMEBin-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    prokka --metagenome --cpus {threads} --prefix "$prefix" "$prefix.fa"
+    mv $prefix/* "$wd/{config.out_dir}/Annotation/Prokka/MEGAHIT/"
+    rm -rf $prefix "$prefix.fa"
+done
+cd "$wd"
+rm -rf .tmp/prokka_megahit_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prokka.yaml"
+
+[[rules]]
+name = "prokka_megahit_metabinner"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = ["{config.out_dir}/Annotation/Prokka/MEGAHIT"]
+depends_on = ["metabinner_bins_megahit", "split_fasta_metabinner_megahit"]
+description = "PROKKA annotation of the MEGAHIT MetaBinner bins and chunks (upstream PROKKA, one process per bin)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/prokka_megahit_metabinner_{sample} && cd .tmp/prokka_megahit_metabinner_{sample}
+mkdir -p "$wd/{config.out_dir}/Annotation/Prokka/MEGAHIT"
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/MEGAHIT-MetaBinner-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    prokka --metagenome --cpus {threads} --prefix "$prefix" "$prefix.fa"
+    mv $prefix/* "$wd/{config.out_dir}/Annotation/Prokka/MEGAHIT/"
+    rm -rf $prefix "$prefix.fa"
+done
+cd "$wd"
+rm -rf .tmp/prokka_megahit_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prokka.yaml"
+
+[[rules]]
+name = "prokka_megahit_semibin2"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+]
+output = ["{config.out_dir}/Annotation/Prokka/MEGAHIT"]
+depends_on = ["semibin_megahit"]
+description = "PROKKA annotation of the MEGAHIT SemiBin2 bins and chunks (upstream PROKKA, one process per bin)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/prokka_megahit_semibin2_{sample} && cd .tmp/prokka_megahit_semibin2_{sample}
+mkdir -p "$wd/{config.out_dir}/Annotation/Prokka/MEGAHIT"
+for f in "$wd"/{config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/MEGAHIT-SemiBin2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    prokka --metagenome --cpus {threads} --prefix "$prefix" "$prefix.fa"
+    mv $prefix/* "$wd/{config.out_dir}/Annotation/Prokka/MEGAHIT/"
+    rm -rf $prefix "$prefix.fa"
+done
+cd "$wd"
+rm -rf .tmp/prokka_megahit_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 2
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/prokka.yaml"
+
+# ---------------------------------------------------------------------------
+# MULTIQC: single run over the published results (upstream collects the
+# fastqc htmls, fastp json, bowtie2 logs, QUAST reports, BUSCO short
+# summaries, PROKKA txt, and the GTDB-Tk summary; the nf-core boilerplate
+# workflow_summary/methods_description files are not ported)
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "multiqc"
+input = [
+    "{config.out_dir}/QC_shortreads",
+    "{config.out_dir}/Assembly",
+    "{config.out_dir}/GenomeBinning",
+    "{config.out_dir}/Annotation",
+    "{config.out_dir}/Taxonomy",
+]
+output = ["{config.out_dir}/multiqc/multiqc_report.html"]
+depends_on = [
+    "fastqc_raw",
+    "fastp",
+    "phix_align",
+    "fastqc_trimmed",
+    "quast_spades",
+    "quast_megahit",
+    "prodigal_spades",
+    "prodigal_megahit",
+    "bowtie2_align_spades",
+    "bowtie2_align_megahit",
+    "ale_spades",
+    "ale_megahit",
+    "busco_spades_metabat2",
+    "quast_bins_spades_metabat2",
+    "gtdbtk_spades_metabat2",
+    "prokka_spades_metabat2",
+    "busco_spades_maxbin2",
+    "quast_bins_spades_maxbin2",
+    "gtdbtk_spades_maxbin2",
+    "prokka_spades_maxbin2",
+    "busco_spades_concoct",
+    "quast_bins_spades_concoct",
+    "gtdbtk_spades_concoct",
+    "prokka_spades_concoct",
+    "busco_spades_comebin",
+    "quast_bins_spades_comebin",
+    "gtdbtk_spades_comebin",
+    "prokka_spades_comebin",
+    "busco_spades_metabinner",
+    "quast_bins_spades_metabinner",
+    "gtdbtk_spades_metabinner",
+    "prokka_spades_metabinner",
+    "busco_spades_semibin2",
+    "quast_bins_spades_semibin2",
+    "gtdbtk_spades_semibin2",
+    "prokka_spades_semibin2",
+    "busco_megahit_metabat2",
+    "quast_bins_megahit_metabat2",
+    "gtdbtk_megahit_metabat2",
+    "prokka_megahit_metabat2",
+    "busco_megahit_maxbin2",
+    "quast_bins_megahit_maxbin2",
+    "gtdbtk_megahit_maxbin2",
+    "prokka_megahit_maxbin2",
+    "busco_megahit_concoct",
+    "quast_bins_megahit_concoct",
+    "gtdbtk_megahit_concoct",
+    "prokka_megahit_concoct",
+    "busco_megahit_comebin",
+    "quast_bins_megahit_comebin",
+    "gtdbtk_megahit_comebin",
+    "prokka_megahit_comebin",
+    "busco_megahit_metabinner",
+    "quast_bins_megahit_metabinner",
+    "gtdbtk_megahit_metabinner",
+    "prokka_megahit_metabinner",
+    "busco_megahit_semibin2",
+    "quast_bins_megahit_semibin2",
+    "gtdbtk_megahit_semibin2",
+    "prokka_megahit_semibin2",
+    "concat_busco",
+    "mag_depths_summary",
+    "concat_quast",
+    "gtdbtk_summary",
+    "bin_summary",
+]
+description = "MultiQC report over all published results (upstream MULTIQC)"
+shell = """
+mkdir -p {config.out_dir}/multiqc
+multiqc --config assets/multiqc_config.yml --force \
+    {input[0]} {input[1]} {input[2]} {input[3]} {input[4]}
+mv multiqc_report.html {config.out_dir}/multiqc/
+"""
+
+[rules.resources]
+threads = 1
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/multiqc.yaml"

@@ -1,0 +1,9 @@
+---
+# Environment for fastp — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/fastp 1.0.1 module environment (modules/nf-core/fastp/main/environment.yml).
+name: fastp
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::fastp=1.0.1
