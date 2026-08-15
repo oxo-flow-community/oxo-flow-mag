@@ -1,7 +1,9 @@
 {
   "name": "oxo-flow-mag",
-  "title": "nf-core mag (port)",
-  "engine": "oxo-flow",
+  "title": "Metagenome assembly, binning and taxonomic classification",
+  "origin": "port",
+  "rating": "verified",
+  "engine": "nextflow",
   "source": {
     "repo": "nf-core/mag",
     "url": "https://github.com/nf-core/mag",
@@ -11,8 +13,15 @@
   },
   "created": "2026-08-15",
   "domain": "metagenomics",
-  "tags": ["metagenomics", "assembly", "binning", "taxonomy", "nf-core", "gtdbtk", "busco"],
-  "description": "oxo-flow port of the nf-core/mag pipeline (default short-read path): FastQC/Fastp QC with phiX removal, SPAdes and MEGAHIT metagenomic assembly, QUAST and Prodigal on the assemblies, bowtie2 read mapping back to the assemblies, contig depth profiles, six binners (MetaBAT2, MaxBin2, CONCOCT, COMEBin, MetaBinner, SemiBin2) with unbinned-contig chunk splitting, BUSCO bin QC, per-group QUAST and depth summaries, ALE assembly evaluation, GTDB-Tk classification of QC-passing bins with a combined summary, PROKKA annotation, and a final MultiQC report.",
+  "tags": [
+    "metagenomics",
+    "assembly",
+    "binning",
+    "taxonomy",
+    "nf-core",
+    "gtdbtk",
+    "busco"
+  ],
   "scope": [
     "fastqc_raw",
     "fastp",
@@ -91,7 +100,20 @@
     "pandas",
     "biopython"
   ],
-  "status": "dry-run validated",
+  "description": "Turn paired-end metagenomic reads into quality-checked, taxonomically classified draft genomes: FastQC and fastp QC with phiX removal, SPAdes and MEGAHIT assembly, QUAST and Prodigal assessment, bowtie2 mapping, binning with six binners (MetaBAT2, MaxBin2, CONCOCT, COMEBin, MetaBinner, SemiBin2), BUSCO bin QC, GTDB-Tk classification with a combined summary, PROKKA annotation, ALE evaluation and a final MultiQC report. The default short-read path of nf-core/mag, faithfully ported with the same tool versions and commands.",
+  "installation": {
+    "engine": "oxo-flow >= 0.11.0",
+    "toolchain": "conda envs — pinned",
+    "requirements": [
+      "input: paired-end reads as {sample}_R1.fastq.gz / {sample}_R2.fastq.gz in config.input_dir (default test/fixtures/raw); single-end not ported",
+      "reference: GTDB-Tk database — download gtdbtk_data.tar.gz (~100 GB) or unpacked directory and set config.gtdb_db (oxo-flow cannot download it mid-run)",
+      "reference: phiX genome FASTA bundled in the repo (assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz) — no download needed",
+      "compute: up to 12 CPUs / 140 GB RAM per rule (SPAdes 10 CPUs/72 GB/24 h; GTDB-Tk classifywf 2 CPUs/140 GB/12 h; defaults 1 thread/6 GB)",
+      "software: conda or mamba with the pinned envs/*.yaml environments (one per tool, no container layer)",
+      "optional: disk — hundreds of GB for real datasets (GTDB-Tk database plus per-sample assemblies and bins)"
+    ]
+  },
   "repo_url": "https://github.com/oxo-flow-community/oxo-flow-mag",
+  "license": "Apache-2.0",
   "upstream_license": "MIT"
 }
