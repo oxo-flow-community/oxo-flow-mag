@@ -28,10 +28,10 @@ Tool versions and resource requests (cpu/memory/time per process label) match th
 
 ### 1. Install oxo-flow
 
-This workflow requires **oxo-flow >= 0.11.0**. The release binary is recommended:
+This workflow requires **oxo-flow >= 0.12.0**. The release binary is recommended:
 
 ```bash
-curl -fL -o oxo-flow.tar.gz https://github.com/Traitome/oxo-flow/releases/download/v0.11.0/oxo-flow-v0.11.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fL -o oxo-flow.tar.gz https://github.com/Traitome/oxo-flow/releases/latest/download/oxo-flow-latest-x86_64-unknown-linux-gnu.tar.gz
 tar xzf oxo-flow.tar.gz && sudo mv oxo-flow /usr/local/bin/
 ```
 
@@ -140,7 +140,7 @@ Long-read assembly and binning, DAS Tool refinement, kaiju and diamond taxonomic
 bash test/run.sh    # static acceptance: validate + lint + dry-run + debug
 ```
 
-The acceptance test needs only `oxo-flow` (v0.11.0+) on `PATH` (override with `OXO=/path/to/oxo-flow`); no conda environments or databases are required for validation.
+The acceptance test needs only `oxo-flow` (v0.12.0+) on `PATH` (override with `OXO=/path/to/oxo-flow`); no conda environments or databases are required for validation.
 
 **Status: static acceptance only.** The pipeline has not been executed end-to-end: a real run requires the GTDB-Tk reference database (~100 GB download) and per-tool conda environments, which is impractical for CI. The workflow graph, rule commands, config expansion and DAG wiring are verified by `validate` + `lint` + `dry-run` + `debug`; runtime behavior of the underlying tools is unchanged from upstream nf-core/mag.
 
