@@ -61,6 +61,17 @@ def reverse_complement(seq):
     return seq[::-1].translate(comp)
 
 
+def qualities(length, rng):
+    """Illumina-like Phred+33 string: high at the 5' end, declining
+    towards the tail. Uniform quality chars make SPAdes' offset
+    detection fail ('Failed to determine offset!' — live)."""
+    qs = []
+    for i in range(length):
+        q = 38 - 15 * (i / length) + rng.gauss(0, 1.5)
+        qs.append(chr(33 + int(max(2, min(40, round(q))))))
+    return "".join(qs)
+
+
 def make_reads(genome, n_pairs, rng):
     """150 bp PE reads from a circular genome at ~300 bp inserts."""
     out1, out2 = [], []
@@ -81,8 +92,8 @@ def make_reads(genome, n_pairs, rng):
             c if rng.random() > ERROR_RATE else rng.choice([b for b in "ACGT" if b != c])
             for c in read2
         )
-        out1.append(f"@{_}/1\n{read1}\n+\n{'I' * READ_LEN}")
-        out2.append(f"@{_}/2\n{read2}\n+\n{'I' * READ_LEN}")
+        out1.append(f"@{_}/1\n{read1}\n+\n{qualities(READ_LEN, rng)}")
+        out2.append(f"@{_}/2\n{read2}\n+\n{qualities(READ_LEN, rng)}")
     return out1, out2
 
 
