@@ -28,7 +28,7 @@ ln -sf {input[1]} {sample}_run1_raw_2.fastq.gz
 fastqc \\
     --quiet \\
     --threads {threads} \\
-    --memory 6144 \\
+    --memory $(( {effective_memory_mb} / 4 )) \\
     {sample}_run1_raw_1.fastq.gz \\
     {sample}_run1_raw_2.fastq.gz
 mkdir -p {config.out_dir}/QC_shortreads/fastqc
@@ -195,7 +195,7 @@ ln -sf {input[1]} {sample}_run1_trimmed_2.fastq.gz
 fastqc \\
     --quiet \\
     --threads {threads} \\
-    --memory 6144 \\
+    --memory $(( {effective_memory_mb} / 4 )) \\
     {sample}_run1_trimmed_1.fastq.gz \\
     {sample}_run1_trimmed_2.fastq.gz
 mkdir -p {config.out_dir}/QC_shortreads/fastqc
