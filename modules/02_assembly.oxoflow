@@ -38,6 +38,16 @@ spades.py \\
     -1 r1.fastq.gz \\
     -2 r2.fastq.gz \\
     -o ./
+# fail fast instead of silently exiting 0 on missing outputs (live:
+# spades.py produced no scaffolds.fasta and the bare mv/rm tail made
+# the shell report success)
+[ $? -eq 0 ] || { echo "spades.py failed for {sample}" 1>&2; exit 1; }
+if [ ! -s scaffolds.fasta ]; then
+    # zero-contig assembly is a valid result channel (nf-core lets it
+    # flow through); emit the file so the declared output contract holds
+    echo "spades produced no scaffolds for {sample}; emitting an empty assembly" 1>&2
+    touch scaffolds.fasta
+fi
 mv spades.log SPAdes-{sample}.spades.log
 mv scaffolds.fasta SPAdes-{sample}.scaffolds.fa
 gzip -n SPAdes-{sample}.scaffolds.fa
@@ -73,14 +83,17 @@ mkdir -p intermediates/assembly/MEGAHIT {config.out_dir}/Assembly/MEGAHIT
 mkdir -p .tmp/megahit_{sample} && cd .tmp/megahit_{sample}
 ln -sf "$wd/{input[0]}" r1.fastq.gz
 ln -sf "$wd/{input[1]}" r2.fastq.gz
-# -m = task.memory.toBytes() = 40 GB; pigz compresses the assembly + the
+# -m follows the machine's effective memory budget instead of the
+# upstream hardcoded 40 GB (live: 40 GB on a 3.7 GB host is an OOM
+# death sentence); pigz compresses the assembly + the
 # intermediate_contigs; mv flattens megahit_out into the scratch dir
 megahit \\
-    -m 42949672960 \\
+    -m $(( {effective_memory_mb} * 1048576 )) \\
     -t {threads} \\
     -1 r1.fastq.gz \\
     -2 r2.fastq.gz \\
     --out-prefix MEGAHIT-{sample}
+[ $? -eq 0 ] || { echo "megahit failed for {sample}" 1>&2; exit 1; }
 pigz \\
     --no-name \\
     -p {threads} \\
