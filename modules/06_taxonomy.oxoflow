@@ -27,6 +27,13 @@ output = ["intermediates/gtdbtk_db/database"]
 description = "Prepare the GTDB-Tk reference database (upstream GTDBTK_DB_PREPARATION)"
 shell = """
 mkdir -p intermediates/gtdbtk_db/database
+if [ -z "{input[0]}" ]; then
+    # fail fast instead of tar's opaque "Cannot connect to https"
+    # (live: the old config default was the upstream URL, which tar
+    # cannot fetch)
+    echo "gtdb_db is empty: set config.gtdb_db to the local GTDB-Tk release tarball (or unpacked directory), or run with run_gtdbtk=false" 1>&2
+    exit 1
+fi
 if [ -d "{input[0]}" ]; then
     # user passed a directory instead of a tar.gz
     cp -r "{input[0]}"/. intermediates/gtdbtk_db/database/
