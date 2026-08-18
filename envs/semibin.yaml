@@ -7,4 +7,4 @@ channels:
   - bioconda
 dependencies:
   - bioconda::semibin=2.2.0
-  - bioconda::igraph=0.10.17
+  - igraph=0.10.17

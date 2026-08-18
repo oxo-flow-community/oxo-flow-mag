@@ -7,4 +7,4 @@ channels:
   - bioconda
 dependencies:
   - bioconda::concoct=1.1.0
-  - bioconda::setuptools=70
+  - setuptools=70

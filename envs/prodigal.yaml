@@ -7,4 +7,4 @@ channels:
   - bioconda
 dependencies:
   - bioconda::prodigal=2.6.3
-  - bioconda::pigz=2.6
+  - pigz=2.6
