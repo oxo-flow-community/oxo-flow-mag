@@ -1,9 +1,18 @@
 ---
-# Environment for ale — pinned exactly to the upstream
-# nf-core/mag 5.5.0 upstream nf-core/ale 20180904 module environment (modules/nf-core/ale/main/environment.yml).
+# Environment for ale — the upstream nf-core/mag 5.5.0 pin (bioconda
+# ale=20180904) is UNINSTALLABLE: its pymix dependency chain requires
+# matplotlib <1.5 (py2-era), which no channel carries anymore (live:
+# LibMambaUnsatisfiableError). ALE's own C binaries are the only parts
+# the rules invoke (`ALE --metagenome`, no python involved), so this env
+# carries the build toolchain instead and scripts/build_ale.sh compiles
+# the pinned upstream source tag into it (one-time step, idempotent).
+# See README "Tools".
 name: ale
 channels:
   - conda-forge
   - bioconda
 dependencies:
-  - bioconda::ale=20180904
+  - python=3.9
+  - make
+  - gcc
+  - zlib
