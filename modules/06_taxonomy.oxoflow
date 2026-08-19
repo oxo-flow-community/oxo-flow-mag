@@ -21,11 +21,19 @@ description = "nf-core/mag 5.5.0 06_taxonomy fragment"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "gtdbtk_db_preparation"
+when = "config.run_gtdbtk"
 input = ["{config.gtdb_db}"]
 output = ["intermediates/gtdbtk_db/database"]
 description = "Prepare the GTDB-Tk reference database (upstream GTDBTK_DB_PREPARATION)"
 shell = """
 mkdir -p intermediates/gtdbtk_db/database
+if [ -z "{input[0]}" ]; then
+    # fail fast instead of tar's opaque "Cannot connect to https"
+    # (live: the old config default was the upstream URL, which tar
+    # cannot fetch)
+    echo "gtdb_db is empty: set config.gtdb_db to the local GTDB-Tk release tarball (or unpacked directory), or run with run_gtdbtk=false" 1>&2
+    exit 1
+fi
 if [ -d "{input[0]}" ]; then
     # user passed a directory instead of a tar.gz
     cp -r "{input[0]}"/. intermediates/gtdbtk_db/database/
@@ -43,6 +51,7 @@ time_limit = "4h"
 conda = "envs/gtdbtk_db_preparation.yaml"
 [[rules]]
 name = "gtdbtk_spades_metabat2"
+when = "config.run_gtdbtk"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBAT2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -127,6 +136,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_spades_maxbin2"
+when = "config.run_gtdbtk"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MaxBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -211,6 +221,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_spades_concoct"
+when = "config.run_gtdbtk"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-CONCOCT-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -295,6 +306,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_spades_comebin"
+when = "config.run_gtdbtk"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-COMEBin-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -379,6 +391,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_spades_metabinner"
+when = "config.run_gtdbtk"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBinner-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -463,6 +476,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_spades_semibin2"
+when = "config.run_gtdbtk"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-SemiBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -547,6 +561,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_megahit_metabat2"
+when = "config.run_gtdbtk"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -631,6 +646,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_megahit_maxbin2"
+when = "config.run_gtdbtk"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -715,6 +731,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_megahit_concoct"
+when = "config.run_gtdbtk"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -799,6 +816,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_megahit_comebin"
+when = "config.run_gtdbtk"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-COMEBin-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -883,6 +901,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_megahit_metabinner"
+when = "config.run_gtdbtk"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -967,6 +986,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_megahit_semibin2"
+when = "config.run_gtdbtk"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -1055,6 +1075,7 @@ conda = "envs/gtdbtk.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "gtdbtk_summary"
+when = "config.run_gtdbtk"
 input = [
     "intermediates/binning/gtdbtk/discarded",
     "intermediates/binning/gtdbtk/summaries",
@@ -1089,7 +1110,7 @@ if ls intermediates/binning/gtdbtk/summaries/*/*.summary.tsv >/dev/null 2>&1; th
     args_s="-s $(ls intermediates/binning/gtdbtk/summaries/*/*.summary.tsv | tr '\n' ' ')"
 fi
 if [ -n "$args_d" ] || [ -n "$args_s" ]; then
-    summary_gtdbtk.py -x gz $args_d $args_s --out gtdbtk_summary.tsv
+    python scripts/summary_gtdbtk.py -x gz $args_d $args_s --out gtdbtk_summary.tsv
 else
     touch gtdbtk_summary.tsv
 fi
@@ -1115,6 +1136,10 @@ input = [
     "{config.out_dir}/GenomeBinning/QC/quast_bin_summary.tsv",
     "{config.out_dir}/GenomeBinning/QC/busco_summary.tsv",
     "{config.out_dir}/Taxonomy/GTDB-Tk/gtdbtk_summary.tsv",
+    # the helper ships in the repo, not on the env PATH (live: bare
+    # combine_tables.py -> command not found; upstream had it in the
+    # container's bin/)
+    "scripts/combine_tables.py",
 ]
 output = ["{config.out_dir}/GenomeBinning/bin_summary.tsv"]
 depends_on = ["mag_depths_summary", "concat_quast", "concat_busco", "gtdbtk_summary"]
@@ -1126,7 +1151,7 @@ args_busco=""
 [ -s "{input[2]}" ] && args_busco="--busco_summary {input[2]}"
 args_gtdbtk=""
 [ -s "{input[3]}" ] && args_gtdbtk="--gtdbtk_summary {input[3]}"
-combine_tables.py \
+python scripts/combine_tables.py \
     --depths_summary {input[0]} \
     $args_quast \
     $args_busco \
@@ -1689,8 +1714,14 @@ depends_on = [
 description = "MultiQC report over all published results (upstream MULTIQC)"
 shell = """
 mkdir -p {config.out_dir}/multiqc
-multiqc --config assets/multiqc_config.yml --force \
-    {input[0]} {input[1]} {input[2]} {input[3]} {input[4]}
+# pass only the result dirs that exist: the Taxonomy dir is produced
+# by the GTDB-Tk rules and is absent with run_gtdbtk=false (live:
+# multiqc died on the missing path)
+dirs=""
+for d in {input[0]} {input[1]} {input[2]} {input[3]} {input[4]}; do
+    [ -d "$d" ] && dirs="$dirs $d"
+done
+multiqc --config assets/multiqc_config.yml --force $dirs
 mv multiqc_report.html {config.out_dir}/multiqc/
 """
 

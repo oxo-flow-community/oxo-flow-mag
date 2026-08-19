@@ -28,7 +28,7 @@ ln -sf {input[1]} {sample}_run1_raw_2.fastq.gz
 fastqc \\
     --quiet \\
     --threads {threads} \\
-    --memory 6144 \\
+    --memory $(( {effective_memory_mb} / 4 )) \\
     {sample}_run1_raw_1.fastq.gz \\
     {sample}_run1_raw_2.fastq.gz
 mkdir -p {config.out_dir}/QC_shortreads/fastqc
@@ -158,11 +158,11 @@ INDEX=`find -L intermediates/binning/phix_index -name "*.rev.1.bt2" | sed "s/\\.
 bowtie2 -p {threads} \\
         -x "$INDEX" \\
         -1 {input[0]} -2 {input[1]} \\
-        --un-conc-gz {sample}_run1_phix_removed.unmapped_%.fastq.gz \\
-        --al-conc-gz {sample}_run1_phix_removed.mapped_%.fastq.gz \\
+        --un-conc-gz {sample}_run1_phix_removed_%.unmapped.fastq.gz \\
+        --al-conc-gz {sample}_run1_phix_removed_%.mapped.fastq.gz \\
         1> /dev/null \\
         2> {sample}_run1_phix_removed.bowtie2.log
-rm -f {sample}_run1_phix_removed.mapped_*.fastq.gz
+rm -f {sample}_run1_phix_removed_*.mapped.fastq.gz
 
 mv {sample}_run1_phix_removed_1.unmapped.fastq.gz intermediates/QC_shortreads/remove_phix/
 mv {sample}_run1_phix_removed_2.unmapped.fastq.gz intermediates/QC_shortreads/remove_phix/
@@ -195,7 +195,7 @@ ln -sf {input[1]} {sample}_run1_trimmed_2.fastq.gz
 fastqc \\
     --quiet \\
     --threads {threads} \\
-    --memory 6144 \\
+    --memory $(( {effective_memory_mb} / 4 )) \\
     {sample}_run1_trimmed_1.fastq.gz \\
     {sample}_run1_trimmed_2.fastq.gz
 mkdir -p {config.out_dir}/QC_shortreads/fastqc

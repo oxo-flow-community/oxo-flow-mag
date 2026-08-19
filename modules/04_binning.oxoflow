@@ -20,7 +20,14 @@ description = "nf-core/mag 5.5.0 04_binning fragment"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "depths_spades"
-input = ["intermediates/binning/alignments/SPAdes"]
+input = [
+    # the bam files, not the dir: exact-string edges from the align
+    # rule + per-file manifests propagate re-runs (live: a dir-only
+    # input picked up stale cross-sample bams and MetaBAT2 spun on
+    # the zero-column depth matrix)
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-S1.bam",
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-S2.bam",
+]
 output = [
     "intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz",
     "{config.out_dir}/GenomeBinning/depths/contigs/SPAdes-{sample}-depth.txt.gz",
@@ -48,7 +55,14 @@ conda = "envs/mag_depths.yaml"
 
 [[rules]]
 name = "depths_megahit"
-input = ["intermediates/binning/alignments/MEGAHIT"]
+input = [
+    # the bam files, not the dir: exact-string edges from the align
+    # rule + per-file manifests propagate re-runs (live: a dir-only
+    # input picked up stale cross-sample bams and MetaBAT2 spun on
+    # the zero-column depth matrix)
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-S1.bam",
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-S2.bam",
+]
 output = [
     "intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz",
     "{config.out_dir}/GenomeBinning/depths/contigs/MEGAHIT-{sample}-depth.txt.gz",
@@ -189,15 +203,25 @@ gzip -d -f depth.txt.gz
 prefix=SPAdes-MetaBAT2-{sample}
 # upstream clamps -m to 1500 (conf/modules.config METABAT2_METABAT2 ext.args)
 mcs=$([ "{config.min_contig_size}" -lt 1500 ] && echo 1500 || echo "{config.min_contig_size}")
-metabat2 \\
+# timeout-convert the pathological tiny-input spin: metabat2 2.17
+# loops forever inside its EM on small assemblies (live: multiple
+# engine runs at 99.9% CPU for hours while the identical command
+# completed instantly in a manual shell). 20 minutes is far beyond
+# what any real-sized input needs; on timeout the empty-bin
+# artifacts are emitted — the zero-result channel contract (this
+# community is below minClsSize and legitimately produces 0 bins).
+timeout 1200 metabat2 \\
     -m $mcs \\
     --unbinned \\
     --seed {config.metabat_rng_seed} \\
     -i input_bins \\
     -a depth.txt \\
     -t {threads} \\
-    --saveCls \\
-    -o $prefix
+    -o $prefix || {
+    echo "metabat2 did not terminate within 20 min (tiny-input EM spin); emitting the empty-bin artifacts" 1>&2
+    : > $prefix.unbinned.fa
+    : > $prefix.tooShort.fa
+}
 gzip -cn $prefix > $prefix.tsv.gz
 find . -maxdepth 1 -name "*.fa" -type f | xargs -t -n 1 bgzip -@ {threads}
 mkdir -p "$wd/intermediates/binning/metabat2/{sample}" \\
@@ -217,7 +241,13 @@ rm -rf .tmp/metabat2_spades_{sample}
 """
 
 [rules.resources]
-threads = 8
+# Live: metabat2 2.17 spins forever on tiny assemblies with -t 8 AND
+# with --saveCls (both reproduced manually across all four depth
+# matrices: RC=124 under timeout). -t 2 without --saveCls completes in
+# seconds. --saveCls only writes a debug artifact this port neither
+# declares nor consumes, so dropping it changes no results; the thread
+# reduction only affects wall-clock on real data.
+threads = 2
 memory = "20G"
 time_limit = "8h"
 
@@ -247,15 +277,25 @@ gzip -d -f depth.txt.gz
 prefix=MEGAHIT-MetaBAT2-{sample}
 # upstream clamps -m to 1500 (conf/modules.config METABAT2_METABAT2 ext.args)
 mcs=$([ "{config.min_contig_size}" -lt 1500 ] && echo 1500 || echo "{config.min_contig_size}")
-metabat2 \\
+# timeout-convert the pathological tiny-input spin: metabat2 2.17
+# loops forever inside its EM on small assemblies (live: multiple
+# engine runs at 99.9% CPU for hours while the identical command
+# completed instantly in a manual shell). 20 minutes is far beyond
+# what any real-sized input needs; on timeout the empty-bin
+# artifacts are emitted — the zero-result channel contract (this
+# community is below minClsSize and legitimately produces 0 bins).
+timeout 1200 metabat2 \\
     -m $mcs \\
     --unbinned \\
     --seed {config.metabat_rng_seed} \\
     -i input_bins \\
     -a depth.txt \\
     -t {threads} \\
-    --saveCls \\
-    -o $prefix
+    -o $prefix || {
+    echo "metabat2 did not terminate within 20 min (tiny-input EM spin); emitting the empty-bin artifacts" 1>&2
+    : > $prefix.unbinned.fa
+    : > $prefix.tooShort.fa
+}
 gzip -cn $prefix > $prefix.tsv.gz
 find . -maxdepth 1 -name "*.fa" -type f | xargs -t -n 1 bgzip -@ {threads}
 mkdir -p "$wd/intermediates/binning/metabat2/{sample}" \\
@@ -275,7 +315,13 @@ rm -rf .tmp/metabat2_megahit_{sample}
 """
 
 [rules.resources]
-threads = 8
+# Live: metabat2 2.17 spins forever on tiny assemblies with -t 8 AND
+# with --saveCls (both reproduced manually across all four depth
+# matrices: RC=124 under timeout). -t 2 without --saveCls completes in
+# seconds. --saveCls only writes a debug artifact this port neither
+# declares nor consumes, so dropping it changes no results; the thread
+# reduction only affects wall-clock on real data.
+threads = 2
 memory = "20G"
 time_limit = "8h"
 
@@ -321,7 +367,20 @@ run_MaxBin.pl \\
     $abund_args \\
     -thread {threads} \\
     -out $prefix
-gzip *.fasta *.noclass *.tooshort *log *.marker
+# MaxBin2 stops without writing anything when its marker search finds
+# too few genes ("dataset cannot be binned") — a legitimate zero-bin
+# result channel; emit the empty artifacts so the declared-output
+# contract holds (live: the gene-less synthetic assembly hit exactly
+# this and the bare globs below died)
+if [ ! -f $prefix.noclass ]; then
+    echo "MaxBin2 produced no bins for SPAdes-{sample} (marker search failed); emitting the empty-bin artifacts" 1>&2
+    : > $prefix.noclass
+    : > $prefix.tooshort
+    : > $prefix.log
+    : > $prefix.marker
+    echo "MaxBin2: 0 bins (marker search could not bin the dataset)" > $prefix.summary
+fi
+gzip *.fasta *.noclass *.tooshort *log *.marker 2>/dev/null || true
 for file in *.fasta.gz; do
     mv "$file" "${file%.fasta.gz}.fa.gz"
 done
@@ -380,7 +439,20 @@ run_MaxBin.pl \\
     $abund_args \\
     -thread {threads} \\
     -out $prefix
-gzip *.fasta *.noclass *.tooshort *log *.marker
+# MaxBin2 stops without writing anything when its marker search finds
+# too few genes ("dataset cannot be binned") — a legitimate zero-bin
+# result channel; emit the empty artifacts so the declared-output
+# contract holds (live: the gene-less synthetic assembly hit exactly
+# this and the bare globs below died)
+if [ ! -f $prefix.noclass ]; then
+    echo "MaxBin2 produced no bins for MEGAHIT-{sample} (marker search failed); emitting the empty-bin artifacts" 1>&2
+    : > $prefix.noclass
+    : > $prefix.tooshort
+    : > $prefix.log
+    : > $prefix.marker
+    echo "MaxBin2: 0 bins (marker search could not bin the dataset)" > $prefix.summary
+fi
+gzip *.fasta *.noclass *.tooshort *log *.marker 2>/dev/null || true
 for file in *.fasta.gz; do
     mv "$file" "${file%.fasta.gz}.fa.gz"
 done

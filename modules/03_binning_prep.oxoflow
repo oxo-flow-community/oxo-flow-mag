@@ -64,9 +64,26 @@ conda = "envs/bowtie2.yaml"
 # results/Assembly/{assembler}/QC/{sample}/.
 [[rules]]
 name = "bowtie2_align_spades"
-input = ["intermediates/binning/assembly_index/SPAdes"]
+input = [
+    # file-level inputs (not the shared dirs): exact-string edges +
+    # per-file manifests make re-runs propagate — the dir-only input
+    # let this rule stay fresh on a stale bam next to a fresh assembly
+    # (live: ALE died on the mismatch)
+    "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.1.bt2",
+    "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.rev.1.bt2",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz",
+]
 output = [
     "intermediates/binning/alignments/SPAdes",
+    # the full row this instance writes (own + cross-sample bams):
+    # declared so re-runs propagate to the depth/binning consumers —
+    # dir-only outputs left stale cross-bams behind a fresh assembly
+    # (live: the depth matrix had zero columns and MetaBAT2 spun).
+    # The cohort names are hard-coded like the rest of the port's
+    # per-assembler/per-sample expansion (config.cohort_samples).
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-S1.bam",
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-S2.bam",
     "{config.out_dir}/Assembly/SPAdes/QC/{sample}/SPAdes-{sample}.bowtie2.log",
 ]
 depends_on = ["bowtie2_build_spades"]
@@ -77,7 +94,10 @@ mkdir -p intermediates/binning/alignments/SPAdes {config.out_dir}/Assembly/SPAde
 mkdir -p .tmp/align_spades_{sample} && cd .tmp/align_spades_{sample}
 # find the index base like the upstream module (works on symlinked dirs via find -L)
 ln -sf "$wd/intermediates/binning/assembly_index/SPAdes" index
-INDEX=$(find -L ./ -name "*.rev.1.bt2l" -o -name "*.rev.1.bt2" | sed 's/.rev.1.bt2l//' | sed 's/.rev.1.bt2//')
+# the index dir is shared by both samples' builds — scope the find to
+# THIS instance's assembly or -x gets "S2 S1" as one prefix (live:
+# bowtie2 died, the empty pipeline still passed the dir-only output)
+INDEX=$(find -L ./ -name "SPAdes-{sample}*.rev.1.bt2l" -o -name "SPAdes-{sample}*.rev.1.bt2" | sed 's/.rev.1.bt2l//' | sed 's/.rev.1.bt2//')
 [ -z "$INDEX" ] && echo "Bowtie2 index files not found" 1>&2 && exit 1
 for r in {config.cohort_samples}; do
     name="SPAdes-{sample}-$r"
@@ -112,9 +132,26 @@ conda = "envs/bowtie2_samtools.yaml"
 
 [[rules]]
 name = "bowtie2_align_megahit"
-input = ["intermediates/binning/assembly_index/MEGAHIT"]
+input = [
+    # file-level inputs (not the shared dirs): exact-string edges +
+    # per-file manifests make re-runs propagate — the dir-only input
+    # let this rule stay fresh on a stale bam next to a fresh assembly
+    # (live: ALE died on the mismatch)
+    "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.1.bt2",
+    "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.rev.1.bt2",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz",
+]
 output = [
     "intermediates/binning/alignments/MEGAHIT",
+    # the full row this instance writes (own + cross-sample bams):
+    # declared so re-runs propagate to the depth/binning consumers —
+    # dir-only outputs left stale cross-bams behind a fresh assembly
+    # (live: the depth matrix had zero columns and MetaBAT2 spun).
+    # The cohort names are hard-coded like the rest of the port's
+    # per-assembler/per-sample expansion (config.cohort_samples).
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-S1.bam",
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-S2.bam",
     "{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/MEGAHIT-{sample}.bowtie2.log",
 ]
 depends_on = ["bowtie2_build_megahit"]
@@ -124,7 +161,10 @@ wd=$(pwd)
 mkdir -p intermediates/binning/alignments/MEGAHIT {config.out_dir}/Assembly/MEGAHIT/QC/{sample}
 mkdir -p .tmp/align_megahit_{sample} && cd .tmp/align_megahit_{sample}
 ln -sf "$wd/intermediates/binning/assembly_index/MEGAHIT" index
-INDEX=$(find -L ./ -name "*.rev.1.bt2l" -o -name "*.rev.1.bt2" | sed 's/.rev.1.bt2l//' | sed 's/.rev.1.bt2//')
+# the index dir is shared by both samples' builds — scope the find to
+# THIS instance's assembly or -x gets "S2 S1" as one prefix (live:
+# bowtie2 died, the empty pipeline still passed the dir-only output)
+INDEX=$(find -L ./ -name "MEGAHIT-{sample}*.rev.1.bt2l" -o -name "MEGAHIT-{sample}*.rev.1.bt2" | sed 's/.rev.1.bt2l//' | sed 's/.rev.1.bt2//')
 [ -z "$INDEX" ] && echo "Bowtie2 index files not found" 1>&2 && exit 1
 for r in {config.cohort_samples}; do
     name="MEGAHIT-{sample}-$r"

@@ -45,9 +45,15 @@ out_dir = "results"
 # phiX reference (upstream --phix_reference default =
 # projectDir/assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz)
 phix_reference = "assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz"
-# GTDB-Tk database: URL of the .tar.gz release or a local directory
-# (upstream --gtdb_db default). gtdbtk_db_preparation unpacks .tar.gz.
-gtdb_db = "https://data.gtdb.aau.ecogenomic.org/releases/release232/232.0/auxillary_files/gtdbtk_package/full_package/gtdbtk_r232_data.tar.gz"
+# GTDB-Tk database: local path to the release .tar.gz or an unpacked
+# directory (upstream --gtdb_db, ~100GB). oxo-flow cannot download it
+# mid-run (the prep rule only unpacks), so the default is empty and
+# run_gtdbtk=true fails fast until a local path is set.
+gtdb_db = ""
+# GTDB-Tk gate: the ~100GB reference database is user-provided (see the
+# README requirements); run_gtdbtk=false runs the full pipeline minus the
+# GTDB-Tk classification (the documented live-test contract).
+run_gtdbtk = true
 # fastp clipping (upstream params with the same defaults)
 reads_minlength = 15
 fastp_qualified_quality = 15

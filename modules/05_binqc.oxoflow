@@ -109,7 +109,7 @@ for f in {config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.
     [ -e "$f" ] && bins_list="$bins_list $f"
 done
 if [ -n "$bins_list" ]; then
-    get_mag_depths.py --bins $bins_list \
+    python scripts/get_mag_depths.py --bins $bins_list \
         --depths intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz \
         --assembler SPAdes \
         --id {sample} \
@@ -275,7 +275,7 @@ for f in {config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}*.fa
     [ -e "$f" ] && bins_list="$bins_list $f"
 done
 if [ -n "$bins_list" ]; then
-    get_mag_depths.py --bins $bins_list \
+    python scripts/get_mag_depths.py --bins $bins_list \
         --depths intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz \
         --assembler SPAdes \
         --id {sample} \
@@ -441,7 +441,7 @@ for f in {config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}*.fa
     [ -e "$f" ] && bins_list="$bins_list $f"
 done
 if [ -n "$bins_list" ]; then
-    get_mag_depths.py --bins $bins_list \
+    python scripts/get_mag_depths.py --bins $bins_list \
         --depths intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz \
         --assembler SPAdes \
         --id {sample} \
@@ -607,7 +607,7 @@ for f in {config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}*.fa
     [ -e "$f" ] && bins_list="$bins_list $f"
 done
 if [ -n "$bins_list" ]; then
-    get_mag_depths.py --bins $bins_list \
+    python scripts/get_mag_depths.py --bins $bins_list \
         --depths intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz \
         --assembler SPAdes \
         --id {sample} \
@@ -773,7 +773,7 @@ for f in {config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sampl
     [ -e "$f" ] && bins_list="$bins_list $f"
 done
 if [ -n "$bins_list" ]; then
-    get_mag_depths.py --bins $bins_list \
+    python scripts/get_mag_depths.py --bins $bins_list \
         --depths intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz \
         --assembler SPAdes \
         --id {sample} \
@@ -939,7 +939,7 @@ for f in {config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}*.
     [ -e "$f" ] && bins_list="$bins_list $f"
 done
 if [ -n "$bins_list" ]; then
-    get_mag_depths.py --bins $bins_list \
+    python scripts/get_mag_depths.py --bins $bins_list \
         --depths intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz \
         --assembler SPAdes \
         --id {sample} \
@@ -1105,7 +1105,7 @@ for f in {config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*
     [ -e "$f" ] && bins_list="$bins_list $f"
 done
 if [ -n "$bins_list" ]; then
-    get_mag_depths.py --bins $bins_list \
+    python scripts/get_mag_depths.py --bins $bins_list \
         --depths intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz \
         --assembler MEGAHIT \
         --id {sample} \
@@ -1271,7 +1271,7 @@ for f in {config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}*.f
     [ -e "$f" ] && bins_list="$bins_list $f"
 done
 if [ -n "$bins_list" ]; then
-    get_mag_depths.py --bins $bins_list \
+    python scripts/get_mag_depths.py --bins $bins_list \
         --depths intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz \
         --assembler MEGAHIT \
         --id {sample} \
@@ -1437,7 +1437,7 @@ for f in {config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}*.f
     [ -e "$f" ] && bins_list="$bins_list $f"
 done
 if [ -n "$bins_list" ]; then
-    get_mag_depths.py --bins $bins_list \
+    python scripts/get_mag_depths.py --bins $bins_list \
         --depths intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz \
         --assembler MEGAHIT \
         --id {sample} \
@@ -1603,7 +1603,7 @@ for f in {config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}*.f
     [ -e "$f" ] && bins_list="$bins_list $f"
 done
 if [ -n "$bins_list" ]; then
-    get_mag_depths.py --bins $bins_list \
+    python scripts/get_mag_depths.py --bins $bins_list \
         --depths intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz \
         --assembler MEGAHIT \
         --id {sample} \
@@ -1769,7 +1769,7 @@ for f in {config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{samp
     [ -e "$f" ] && bins_list="$bins_list $f"
 done
 if [ -n "$bins_list" ]; then
-    get_mag_depths.py --bins $bins_list \
+    python scripts/get_mag_depths.py --bins $bins_list \
         --depths intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz \
         --assembler MEGAHIT \
         --id {sample} \
@@ -1935,7 +1935,7 @@ for f in {config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}*
     [ -e "$f" ] && bins_list="$bins_list $f"
 done
 if [ -n "$bins_list" ]; then
-    get_mag_depths.py --bins $bins_list \
+    python scripts/get_mag_depths.py --bins $bins_list \
         --depths intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz \
         --assembler MEGAHIT \
         --id {sample} \
@@ -2059,7 +2059,13 @@ conda = "envs/qsv.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "mag_depths_summary"
-input = ["intermediates/binning/depths/bins"]
+input = [
+    "intermediates/binning/depths/bins",
+    # the helper ships in the repo, not on the env PATH (live: bare
+    # `get_mag_depths_summary.py` -> command not found; upstream had
+    # it in the container's bin/)
+    "scripts/get_mag_depths_summary.py",
+]
 output = ["{config.out_dir}/GenomeBinning/depths/bins/bin_depths_summary.tsv"]
 depends_on = [
     "mag_depths_spades_metabat2",
@@ -2079,7 +2085,7 @@ description = "Combine all per-group bin depth tables (upstream MAG_DEPTHS_SUMMA
 shell = """
 mkdir -p {config.out_dir}/GenomeBinning/depths/bins
 if ls intermediates/binning/depths/bins/*-binDepths.tsv >/dev/null 2>&1; then
-    get_mag_depths_summary.py --depths intermediates/binning/depths/bins/*-binDepths.tsv \
+    python scripts/get_mag_depths_summary.py --depths intermediates/binning/depths/bins/*-binDepths.tsv \
         --out bin_depths_summary.tsv
 else
     touch bin_depths_summary.tsv
@@ -2144,7 +2150,10 @@ conda = "envs/qsv.yaml"
 [[rules]]
 name = "ale_spades"
 input = [
-    "intermediates/binning/alignments/SPAdes",
+    # the own-readset bam as a FILE input: the dir alone forms no DAG
+    # edge and no per-file manifest, so ALE could run against a stale
+    # bam next to a fresh assembly and die on its mismatch check (live)
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam",
     "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa.gz",
 ]
 output = ["{config.out_dir}/Assembly/SPAdes/QC/{sample}/ALE/{sample}-SPAdes_ALEoutput.txt"]
@@ -2172,7 +2181,10 @@ conda = "envs/ale.yaml"
 [[rules]]
 name = "ale_megahit"
 input = [
-    "intermediates/binning/alignments/MEGAHIT",
+    # the own-readset bam as a FILE input: the dir alone forms no DAG
+    # edge and no per-file manifest, so ALE could run against a stale
+    # bam next to a fresh assembly and die on its mismatch check (live)
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam",
     "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa.gz",
 ]
 output = ["{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/ALE/{sample}-MEGAHIT_ALEoutput.txt"]
