@@ -10,7 +10,9 @@ between the two samples — so assembly produces genuine contigs and the
 binners have real composition + coverage signal.
 
 Design:
-- 3 species (G1: 35% GC, G2: 50% GC, G3: 65% GC), 30 kb circular each
+- 3 species (G1: 35% GC, G2: 50% GC, G3: 65% GC), 30 kb each, split
+  into 6 unsequenced-linked 5 kb fragments so assembly yields ~18
+  contigs (binning tools need contigs, not whole genomes)
 - 150 bp PE reads, ~300 bp inserts, 0.5% sequencing error, Illumina-style
 - S1 abundances: G1 30x, G2 20x, G3 10x; S2: G1 10x, G2 20x, G3 30x
   (~6000 pairs per sample, ~1 MB gzipped each)
@@ -36,7 +38,13 @@ SPECIES = [
     ("G2", 0.50, 20, 20),
     ("G3", 0.65, 10, 30),
 ]
+# each species is split into 6 unsequenced-linked fragments (reads are
+# drawn per fragment, never across a boundary) so assembly yields ~18
+# contigs — binning tools need many contigs, not whole genomes: on 3
+# whole-genome contigs MetaBAT2's EM spins indefinitely (live).
 GENOME_LEN = 30000
+FRAGMENTS = 6
+FRAGMENT_LEN = GENOME_LEN // FRAGMENTS
 
 
 def random_genome(rng, gc):
@@ -72,15 +80,16 @@ def qualities(length, rng):
     return "".join(qs)
 
 
-def make_reads(genome, n_pairs, rng):
-    """150 bp PE reads from a circular genome at ~300 bp inserts."""
+def make_reads(fragment, n_pairs, rng):
+    """150 bp PE reads from one circular fragment at ~300 bp inserts."""
+    length = len(fragment)
     out1, out2 = [], []
     for _ in range(n_pairs):
-        start = rng.randrange(GENOME_LEN)
+        start = rng.randrange(length)
         insert = max(READ_LEN, rng.randint(INSERT - 100, INSERT + 100))
         end = start + insert
-        read1 = (genome[start:end] if end <= GENOME_LEN
-                 else genome[start:] + genome[: end - GENOME_LEN])
+        read1 = (fragment[start:end] if end <= length
+                 else fragment[start:] + fragment[: end - length])
         read2 = reverse_complement(read1[insert - READ_LEN : insert])
         read1 = read1[:READ_LEN]
         # sequencing error
@@ -104,12 +113,15 @@ def write_sample(sample, abundances, rng):
         genome = random_genome(rng, gc)
         cov = abundances[name]
         n_pairs = GENOME_LEN * cov // (2 * READ_LEN)  # coverage formula, PE
-        a, b = make_reads(genome, n_pairs, rng)
-        for read1, read2 in zip(a, b):
-            header = f"@{sample}_{name}_{pair_id}"
-            r1.append(header + read1[read1.index("/"):])
-            r2.append(header + read2[read2.index("/"):])
-            pair_id += 1
+        per_fragment = n_pairs // FRAGMENTS
+        for frag_i in range(FRAGMENTS):
+            fragment = genome[frag_i * FRAGMENT_LEN:(frag_i + 1) * FRAGMENT_LEN]
+            a, b = make_reads(fragment, per_fragment, rng)
+            for read1, read2 in zip(a, b):
+                header = f"@{sample}_{name}_{pair_id}"
+                r1.append(header + read1[read1.index("/"):])
+                r2.append(header + read2[read2.index("/"):])
+                pair_id += 1
     # interleave randomly so assemblers see a mixed community
     order = list(range(pair_id))
     rng.shuffle(order)
