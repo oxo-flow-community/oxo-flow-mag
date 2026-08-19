@@ -335,7 +335,20 @@ run_MaxBin.pl \\
     $abund_args \\
     -thread {threads} \\
     -out $prefix
-gzip *.fasta *.noclass *.tooshort *log *.marker
+# MaxBin2 stops without writing anything when its marker search finds
+# too few genes ("dataset cannot be binned") — a legitimate zero-bin
+# result channel; emit the empty artifacts so the declared-output
+# contract holds (live: the gene-less synthetic assembly hit exactly
+# this and the bare globs below died)
+if [ ! -f $prefix.noclass ]; then
+    echo "MaxBin2 produced no bins for SPAdes-{sample} (marker search failed); emitting the empty-bin artifacts" 1>&2
+    : > $prefix.noclass
+    : > $prefix.tooshort
+    : > $prefix.log
+    : > $prefix.marker
+    echo "MaxBin2: 0 bins (marker search could not bin the dataset)" > $prefix.summary
+fi
+gzip *.fasta *.noclass *.tooshort *log *.marker 2>/dev/null || true
 for file in *.fasta.gz; do
     mv "$file" "${file%.fasta.gz}.fa.gz"
 done
@@ -394,7 +407,20 @@ run_MaxBin.pl \\
     $abund_args \\
     -thread {threads} \\
     -out $prefix
-gzip *.fasta *.noclass *.tooshort *log *.marker
+# MaxBin2 stops without writing anything when its marker search finds
+# too few genes ("dataset cannot be binned") — a legitimate zero-bin
+# result channel; emit the empty artifacts so the declared-output
+# contract holds (live: the gene-less synthetic assembly hit exactly
+# this and the bare globs below died)
+if [ ! -f $prefix.noclass ]; then
+    echo "MaxBin2 produced no bins for MEGAHIT-{sample} (marker search failed); emitting the empty-bin artifacts" 1>&2
+    : > $prefix.noclass
+    : > $prefix.tooshort
+    : > $prefix.log
+    : > $prefix.marker
+    echo "MaxBin2: 0 bins (marker search could not bin the dataset)" > $prefix.summary
+fi
+gzip *.fasta *.noclass *.tooshort *log *.marker 2>/dev/null || true
 for file in *.fasta.gz; do
     mv "$file" "${file%.fasta.gz}.fa.gz"
 done
