@@ -15,7 +15,9 @@ Design:
   contigs (binning tools need contigs, not whole genomes)
 - 150 bp PE reads, ~300 bp inserts, 0.5% sequencing error, Illumina-style
 - S1 abundances: G1 30x, G2 20x, G3 10x; S2: G1 10x, G2 20x, G3 30x
-  (~6000 pairs per sample, ~1 MB gzipped each)
+  (~6000 pairs per sample, ~1 MB gzipped each); the species sequences
+  are SHARED across samples (only abundance differs), so cross-sample
+  alignments and depth matrices have real signal
 - no contaminants beyond the three genomes, so phiX removal is a no-op
   (exercises the rule without eating reads)
 
@@ -106,11 +108,11 @@ def make_reads(fragment, n_pairs, rng):
     return out1, out2
 
 
-def write_sample(sample, abundances, rng):
+def write_sample(sample, genomes, abundances, rng):
     r1, r2 = [], []
     pair_id = 0
-    for name, gc, _, _ in SPECIES:
-        genome = random_genome(rng, gc)
+    for name, _, _, _ in SPECIES:
+        genome = genomes[name]
         cov = abundances[name]
         n_pairs = GENOME_LEN * cov // (2 * READ_LEN)  # coverage formula, PE
         per_fragment = n_pairs // FRAGMENTS
@@ -136,9 +138,16 @@ def write_sample(sample, abundances, rng):
 def main():
     os.makedirs(RAW, exist_ok=True)
     rng = random.Random(SEED)
+    # ONE community, shared by every sample: the species sequences are
+    # generated once and both samples sequence the SAME genomes at
+    # different abundances. Drawing per sample (the earlier bug) gave
+    # each sample different sequences, cross-sample alignments mapped
+    # nothing, the depth matrix had zero columns, and MetaBAT2's EM
+    # spun forever (live).
+    genomes = {name: random_genome(rng, gc) for name, gc, _, _ in SPECIES}
     for sample in ("S1", "S2"):
         ab = {name: (a if sample == "S1" else b) for name, _, a, b in SPECIES}
-        n = write_sample(sample, ab, rng)
+        n = write_sample(sample, genomes, ab, rng)
         print(f"{sample}: {n} pairs")
     print("mag fixtures regenerated: 3x30kb community, 150bp PE, differential abundance")
 
