@@ -231,7 +231,10 @@ rm -rf .tmp/metabat2_spades_{sample}
 """
 
 [rules.resources]
-threads = 8
+# -t 8 hangs under the engine's process management (live: threads
+# joined forever / 99.9% CPU spins on trivial data); 2 threads
+# completes in seconds and the fixtures need no parallelism.
+threads = 2
 memory = "20G"
 time_limit = "8h"
 
@@ -289,7 +292,10 @@ rm -rf .tmp/metabat2_megahit_{sample}
 """
 
 [rules.resources]
-threads = 8
+# -t 8 hangs under the engine's process management (live: threads
+# joined forever / 99.9% CPU spins on trivial data); 2 threads
+# completes in seconds and the fixtures need no parallelism.
+threads = 2
 memory = "20G"
 time_limit = "8h"
 
