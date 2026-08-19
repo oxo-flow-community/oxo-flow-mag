@@ -76,7 +76,14 @@ input = [
 ]
 output = [
     "intermediates/binning/alignments/SPAdes",
-    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam",
+    # the full row this instance writes (own + cross-sample bams):
+    # declared so re-runs propagate to the depth/binning consumers —
+    # dir-only outputs left stale cross-bams behind a fresh assembly
+    # (live: the depth matrix had zero columns and MetaBAT2 spun).
+    # The cohort names are hard-coded like the rest of the port's
+    # per-assembler/per-sample expansion (config.cohort_samples).
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-S1.bam",
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-S2.bam",
     "{config.out_dir}/Assembly/SPAdes/QC/{sample}/SPAdes-{sample}.bowtie2.log",
 ]
 depends_on = ["bowtie2_build_spades"]
@@ -137,7 +144,14 @@ input = [
 ]
 output = [
     "intermediates/binning/alignments/MEGAHIT",
-    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam",
+    # the full row this instance writes (own + cross-sample bams):
+    # declared so re-runs propagate to the depth/binning consumers —
+    # dir-only outputs left stale cross-bams behind a fresh assembly
+    # (live: the depth matrix had zero columns and MetaBAT2 spun).
+    # The cohort names are hard-coded like the rest of the port's
+    # per-assembler/per-sample expansion (config.cohort_samples).
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-S1.bam",
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-S2.bam",
     "{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/MEGAHIT-{sample}.bowtie2.log",
 ]
 depends_on = ["bowtie2_build_megahit"]

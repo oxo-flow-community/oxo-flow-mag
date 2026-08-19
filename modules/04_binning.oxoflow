@@ -20,7 +20,14 @@ description = "nf-core/mag 5.5.0 04_binning fragment"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "depths_spades"
-input = ["intermediates/binning/alignments/SPAdes"]
+input = [
+    # the bam files, not the dir: exact-string edges from the align
+    # rule + per-file manifests propagate re-runs (live: a dir-only
+    # input picked up stale cross-sample bams and MetaBAT2 spun on
+    # the zero-column depth matrix)
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-S1.bam",
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-S2.bam",
+]
 output = [
     "intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz",
     "{config.out_dir}/GenomeBinning/depths/contigs/SPAdes-{sample}-depth.txt.gz",
@@ -48,7 +55,14 @@ conda = "envs/mag_depths.yaml"
 
 [[rules]]
 name = "depths_megahit"
-input = ["intermediates/binning/alignments/MEGAHIT"]
+input = [
+    # the bam files, not the dir: exact-string edges from the align
+    # rule + per-file manifests propagate re-runs (live: a dir-only
+    # input picked up stale cross-sample bams and MetaBAT2 spun on
+    # the zero-column depth matrix)
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-S1.bam",
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-S2.bam",
+]
 output = [
     "intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz",
     "{config.out_dir}/GenomeBinning/depths/contigs/MEGAHIT-{sample}-depth.txt.gz",
