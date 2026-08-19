@@ -64,7 +64,16 @@ conda = "envs/bowtie2.yaml"
 # results/Assembly/{assembler}/QC/{sample}/.
 [[rules]]
 name = "bowtie2_align_spades"
-input = ["intermediates/binning/assembly_index/SPAdes"]
+input = [
+    # file-level inputs (not the shared dirs): exact-string edges +
+    # per-file manifests make re-runs propagate — the dir-only input
+    # let this rule stay fresh on a stale bam next to a fresh assembly
+    # (live: ALE died on the mismatch)
+    "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.1.bt2",
+    "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.rev.1.bt2",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz",
+]
 output = [
     "intermediates/binning/alignments/SPAdes",
     "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam",
@@ -116,7 +125,16 @@ conda = "envs/bowtie2_samtools.yaml"
 
 [[rules]]
 name = "bowtie2_align_megahit"
-input = ["intermediates/binning/assembly_index/MEGAHIT"]
+input = [
+    # file-level inputs (not the shared dirs): exact-string edges +
+    # per-file manifests make re-runs propagate — the dir-only input
+    # let this rule stay fresh on a stale bam next to a fresh assembly
+    # (live: ALE died on the mismatch)
+    "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.1.bt2",
+    "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.rev.1.bt2",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz",
+]
 output = [
     "intermediates/binning/alignments/MEGAHIT",
     "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam",

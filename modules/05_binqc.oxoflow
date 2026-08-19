@@ -2144,7 +2144,10 @@ conda = "envs/qsv.yaml"
 [[rules]]
 name = "ale_spades"
 input = [
-    "intermediates/binning/alignments/SPAdes",
+    # the own-readset bam as a FILE input: the dir alone forms no DAG
+    # edge and no per-file manifest, so ALE could run against a stale
+    # bam next to a fresh assembly and die on its mismatch check (live)
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam",
     "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa.gz",
 ]
 output = ["{config.out_dir}/Assembly/SPAdes/QC/{sample}/ALE/{sample}-SPAdes_ALEoutput.txt"]
@@ -2172,7 +2175,10 @@ conda = "envs/ale.yaml"
 [[rules]]
 name = "ale_megahit"
 input = [
-    "intermediates/binning/alignments/MEGAHIT",
+    # the own-readset bam as a FILE input: the dir alone forms no DAG
+    # edge and no per-file manifest, so ALE could run against a stale
+    # bam next to a fresh assembly and die on its mismatch check (live)
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam",
     "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa.gz",
 ]
 output = ["{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/ALE/{sample}-MEGAHIT_ALEoutput.txt"]
