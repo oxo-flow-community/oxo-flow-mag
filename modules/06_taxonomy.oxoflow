@@ -1110,7 +1110,7 @@ if ls intermediates/binning/gtdbtk/summaries/*/*.summary.tsv >/dev/null 2>&1; th
     args_s="-s $(ls intermediates/binning/gtdbtk/summaries/*/*.summary.tsv | tr '\n' ' ')"
 fi
 if [ -n "$args_d" ] || [ -n "$args_s" ]; then
-    summary_gtdbtk.py -x gz $args_d $args_s --out gtdbtk_summary.tsv
+    python scripts/summary_gtdbtk.py -x gz $args_d $args_s --out gtdbtk_summary.tsv
 else
     touch gtdbtk_summary.tsv
 fi
@@ -1136,6 +1136,10 @@ input = [
     "{config.out_dir}/GenomeBinning/QC/quast_bin_summary.tsv",
     "{config.out_dir}/GenomeBinning/QC/busco_summary.tsv",
     "{config.out_dir}/Taxonomy/GTDB-Tk/gtdbtk_summary.tsv",
+    # the helper ships in the repo, not on the env PATH (live: bare
+    # combine_tables.py -> command not found; upstream had it in the
+    # container's bin/)
+    "scripts/combine_tables.py",
 ]
 output = ["{config.out_dir}/GenomeBinning/bin_summary.tsv"]
 depends_on = ["mag_depths_summary", "concat_quast", "concat_busco", "gtdbtk_summary"]
@@ -1147,7 +1151,7 @@ args_busco=""
 [ -s "{input[2]}" ] && args_busco="--busco_summary {input[2]}"
 args_gtdbtk=""
 [ -s "{input[3]}" ] && args_gtdbtk="--gtdbtk_summary {input[3]}"
-combine_tables.py \
+python scripts/combine_tables.py \
     --depths_summary {input[0]} \
     $args_quast \
     $args_busco \
