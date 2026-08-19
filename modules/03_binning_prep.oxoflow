@@ -67,6 +67,7 @@ name = "bowtie2_align_spades"
 input = ["intermediates/binning/assembly_index/SPAdes"]
 output = [
     "intermediates/binning/alignments/SPAdes",
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam",
     "{config.out_dir}/Assembly/SPAdes/QC/{sample}/SPAdes-{sample}.bowtie2.log",
 ]
 depends_on = ["bowtie2_build_spades"]
@@ -77,7 +78,10 @@ mkdir -p intermediates/binning/alignments/SPAdes {config.out_dir}/Assembly/SPAde
 mkdir -p .tmp/align_spades_{sample} && cd .tmp/align_spades_{sample}
 # find the index base like the upstream module (works on symlinked dirs via find -L)
 ln -sf "$wd/intermediates/binning/assembly_index/SPAdes" index
-INDEX=$(find -L ./ -name "*.rev.1.bt2l" -o -name "*.rev.1.bt2" | sed 's/.rev.1.bt2l//' | sed 's/.rev.1.bt2//')
+# the index dir is shared by both samples' builds — scope the find to
+# THIS instance's assembly or -x gets "S2 S1" as one prefix (live:
+# bowtie2 died, the empty pipeline still passed the dir-only output)
+INDEX=$(find -L ./ -name "SPAdes-{sample}*.rev.1.bt2l" -o -name "SPAdes-{sample}*.rev.1.bt2" | sed 's/.rev.1.bt2l//' | sed 's/.rev.1.bt2//')
 [ -z "$INDEX" ] && echo "Bowtie2 index files not found" 1>&2 && exit 1
 for r in {config.cohort_samples}; do
     name="SPAdes-{sample}-$r"
@@ -115,6 +119,7 @@ name = "bowtie2_align_megahit"
 input = ["intermediates/binning/assembly_index/MEGAHIT"]
 output = [
     "intermediates/binning/alignments/MEGAHIT",
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam",
     "{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/MEGAHIT-{sample}.bowtie2.log",
 ]
 depends_on = ["bowtie2_build_megahit"]
@@ -124,7 +129,10 @@ wd=$(pwd)
 mkdir -p intermediates/binning/alignments/MEGAHIT {config.out_dir}/Assembly/MEGAHIT/QC/{sample}
 mkdir -p .tmp/align_megahit_{sample} && cd .tmp/align_megahit_{sample}
 ln -sf "$wd/intermediates/binning/assembly_index/MEGAHIT" index
-INDEX=$(find -L ./ -name "*.rev.1.bt2l" -o -name "*.rev.1.bt2" | sed 's/.rev.1.bt2l//' | sed 's/.rev.1.bt2//')
+# the index dir is shared by both samples' builds — scope the find to
+# THIS instance's assembly or -x gets "S2 S1" as one prefix (live:
+# bowtie2 died, the empty pipeline still passed the dir-only output)
+INDEX=$(find -L ./ -name "MEGAHIT-{sample}*.rev.1.bt2l" -o -name "MEGAHIT-{sample}*.rev.1.bt2" | sed 's/.rev.1.bt2l//' | sed 's/.rev.1.bt2//')
 [ -z "$INDEX" ] && echo "Bowtie2 index files not found" 1>&2 && exit 1
 for r in {config.cohort_samples}; do
     name="MEGAHIT-{sample}-$r"
