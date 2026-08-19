@@ -2059,7 +2059,13 @@ conda = "envs/qsv.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "mag_depths_summary"
-input = ["intermediates/binning/depths/bins"]
+input = [
+    "intermediates/binning/depths/bins",
+    # the helper ships in the repo, not on the env PATH (live: bare
+    # `get_mag_depths_summary.py` -> command not found; upstream had
+    # it in the container's bin/)
+    "scripts/get_mag_depths_summary.py",
+]
 output = ["{config.out_dir}/GenomeBinning/depths/bins/bin_depths_summary.tsv"]
 depends_on = [
     "mag_depths_spades_metabat2",
@@ -2079,7 +2085,7 @@ description = "Combine all per-group bin depth tables (upstream MAG_DEPTHS_SUMMA
 shell = """
 mkdir -p {config.out_dir}/GenomeBinning/depths/bins
 if ls intermediates/binning/depths/bins/*-binDepths.tsv >/dev/null 2>&1; then
-    get_mag_depths_summary.py --depths intermediates/binning/depths/bins/*-binDepths.tsv \
+    python scripts/get_mag_depths_summary.py --depths intermediates/binning/depths/bins/*-binDepths.tsv \
         --out bin_depths_summary.tsv
 else
     touch bin_depths_summary.tsv
