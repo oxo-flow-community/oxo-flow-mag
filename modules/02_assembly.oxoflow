@@ -178,8 +178,15 @@ metaquast.py \\
     -l "SPAdes-{sample}" \\
     assembly.fa \\
     -o QUAST
+[ -f QUAST/report.tsv ] || { echo "metaquast produced no report for SPAdes-{sample}" 1>&2; exit 1; }
 cp QUAST/report.tsv QUAST/report_rawassemblies.tsv
-mv QUAST/report_rawassemblies.tsv "$wd/intermediates/assembly/quast/SPAdes-{sample}.report_rawassemblies.tsv"
+# keep a copy in intermediates (the MultiQC feed); the QUAST copy rides
+# the flatten mv below into the declared results path (live: the old mv
+# here stripped it from QUAST/* and the declared output never appeared)
+cp QUAST/report_rawassemblies.tsv "$wd/intermediates/assembly/quast/SPAdes-{sample}.report_rawassemblies.tsv"
+# no-reference runs never write contigs_reports (--max-ref-number 0) —
+# emit the empty dir so the declared-output contract holds
+mkdir -p QUAST/contigs_reports
 # upstream publishDir flattens QUAST/* into QC/{sample}/
 mv QUAST/* "$wd/{config.out_dir}/Assembly/SPAdes/QC/{sample}/"
 cd "$wd"
@@ -218,8 +225,15 @@ metaquast.py \\
     -l "MEGAHIT-{sample}" \\
     assembly.fa \\
     -o QUAST
+[ -f QUAST/report.tsv ] || { echo "metaquast produced no report for MEGAHIT-{sample}" 1>&2; exit 1; }
 cp QUAST/report.tsv QUAST/report_rawassemblies.tsv
-mv QUAST/report_rawassemblies.tsv "$wd/intermediates/assembly/quast/MEGAHIT-{sample}.report_rawassemblies.tsv"
+# keep a copy in intermediates (the MultiQC feed); the QUAST copy rides
+# the flatten mv below into the declared results path (live: the old mv
+# here stripped it from QUAST/* and the declared output never appeared)
+cp QUAST/report_rawassemblies.tsv "$wd/intermediates/assembly/quast/MEGAHIT-{sample}.report_rawassemblies.tsv"
+# no-reference runs never write contigs_reports (--max-ref-number 0) —
+# emit the empty dir so the declared-output contract holds
+mkdir -p QUAST/contigs_reports
 # upstream publishDir flattens QUAST/* into QC/{sample}/
 mv QUAST/* "$wd/{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/"
 cd "$wd"
