@@ -21,7 +21,8 @@ build_dir="$(mktemp -d)"
 trap 'rm -rf "$build_dir"' EXIT
 cd "$build_dir"
 
-curl -fsSL -o ale.tar.gz "https://github.com/sc932/ALE/archive/${ALE_TAG}.tar.gz"
+curl -fsSL -o ale.tar.gz "https://github.com/sc932/ALE/archive/${ALE_TAG}.tar.gz" ||
+    curl -fsSL -o ale.tar.gz "https://ghfast.top/https://github.com/sc932/ALE/archive/${ALE_TAG}.tar.gz"
 echo "${ALE_SHA}  ale.tar.gz" | sha256sum -c -
 tar -xzf ale.tar.gz --strip-components=1
 
