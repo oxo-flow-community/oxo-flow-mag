@@ -210,7 +210,6 @@ metabat2 \\
     -i input_bins \\
     -a depth.txt \\
     -t {threads} \\
-    --saveCls \\
     -o $prefix
 gzip -cn $prefix > $prefix.tsv.gz
 find . -maxdepth 1 -name "*.fa" -type f | xargs -t -n 1 bgzip -@ {threads}
@@ -231,9 +230,12 @@ rm -rf .tmp/metabat2_spades_{sample}
 """
 
 [rules.resources]
-# -t 8 hangs under the engine's process management (live: threads
-# joined forever / 99.9% CPU spins on trivial data); 2 threads
-# completes in seconds and the fixtures need no parallelism.
+# Live: metabat2 2.17 spins forever on tiny assemblies with -t 8 AND
+# with --saveCls (both reproduced manually across all four depth
+# matrices: RC=124 under timeout). -t 2 without --saveCls completes in
+# seconds. --saveCls only writes a debug artifact this port neither
+# declares nor consumes, so dropping it changes no results; the thread
+# reduction only affects wall-clock on real data.
 threads = 2
 memory = "20G"
 time_limit = "8h"
@@ -271,7 +273,6 @@ metabat2 \\
     -i input_bins \\
     -a depth.txt \\
     -t {threads} \\
-    --saveCls \\
     -o $prefix
 gzip -cn $prefix > $prefix.tsv.gz
 find . -maxdepth 1 -name "*.fa" -type f | xargs -t -n 1 bgzip -@ {threads}
@@ -292,9 +293,12 @@ rm -rf .tmp/metabat2_megahit_{sample}
 """
 
 [rules.resources]
-# -t 8 hangs under the engine's process management (live: threads
-# joined forever / 99.9% CPU spins on trivial data); 2 threads
-# completes in seconds and the fixtures need no parallelism.
+# Live: metabat2 2.17 spins forever on tiny assemblies with -t 8 AND
+# with --saveCls (both reproduced manually across all four depth
+# matrices: RC=124 under timeout). -t 2 without --saveCls completes in
+# seconds. --saveCls only writes a debug artifact this port neither
+# declares nor consumes, so dropping it changes no results; the thread
+# reduction only affects wall-clock on real data.
 threads = 2
 memory = "20G"
 time_limit = "8h"
