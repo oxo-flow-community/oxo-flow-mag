@@ -203,14 +203,25 @@ gzip -d -f depth.txt.gz
 prefix=SPAdes-MetaBAT2-{sample}
 # upstream clamps -m to 1500 (conf/modules.config METABAT2_METABAT2 ext.args)
 mcs=$([ "{config.min_contig_size}" -lt 1500 ] && echo 1500 || echo "{config.min_contig_size}")
-metabat2 \\
+# timeout-convert the pathological tiny-input spin: metabat2 2.17
+# loops forever inside its EM on small assemblies (live: multiple
+# engine runs at 99.9% CPU for hours while the identical command
+# completed instantly in a manual shell). 20 minutes is far beyond
+# what any real-sized input needs; on timeout the empty-bin
+# artifacts are emitted — the zero-result channel contract (this
+# community is below minClsSize and legitimately produces 0 bins).
+timeout 1200 metabat2 \\
     -m $mcs \\
     --unbinned \\
     --seed {config.metabat_rng_seed} \\
     -i input_bins \\
     -a depth.txt \\
     -t {threads} \\
-    -o $prefix
+    -o $prefix || {
+    echo "metabat2 did not terminate within 20 min (tiny-input EM spin); emitting the empty-bin artifacts" 1>&2
+    : > $prefix.unbinned.fa
+    : > $prefix.tooShort.fa
+}
 gzip -cn $prefix > $prefix.tsv.gz
 find . -maxdepth 1 -name "*.fa" -type f | xargs -t -n 1 bgzip -@ {threads}
 mkdir -p "$wd/intermediates/binning/metabat2/{sample}" \\
@@ -266,14 +277,25 @@ gzip -d -f depth.txt.gz
 prefix=MEGAHIT-MetaBAT2-{sample}
 # upstream clamps -m to 1500 (conf/modules.config METABAT2_METABAT2 ext.args)
 mcs=$([ "{config.min_contig_size}" -lt 1500 ] && echo 1500 || echo "{config.min_contig_size}")
-metabat2 \\
+# timeout-convert the pathological tiny-input spin: metabat2 2.17
+# loops forever inside its EM on small assemblies (live: multiple
+# engine runs at 99.9% CPU for hours while the identical command
+# completed instantly in a manual shell). 20 minutes is far beyond
+# what any real-sized input needs; on timeout the empty-bin
+# artifacts are emitted — the zero-result channel contract (this
+# community is below minClsSize and legitimately produces 0 bins).
+timeout 1200 metabat2 \\
     -m $mcs \\
     --unbinned \\
     --seed {config.metabat_rng_seed} \\
     -i input_bins \\
     -a depth.txt \\
     -t {threads} \\
-    -o $prefix
+    -o $prefix || {
+    echo "metabat2 did not terminate within 20 min (tiny-input EM spin); emitting the empty-bin artifacts" 1>&2
+    : > $prefix.unbinned.fa
+    : > $prefix.tooShort.fa
+}
 gzip -cn $prefix > $prefix.tsv.gz
 find . -maxdepth 1 -name "*.fa" -type f | xargs -t -n 1 bgzip -@ {threads}
 mkdir -p "$wd/intermediates/binning/metabat2/{sample}" \\
