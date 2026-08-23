@@ -26,6 +26,12 @@ curl -fsSL -o ale.tar.gz "https://github.com/sc932/ALE/archive/${ALE_TAG}.tar.gz
 echo "${ALE_SHA}  ale.tar.gz" | sha256sum -c -
 tar -xzf ale.tar.gz --strip-components=1
 
+# Modern GCC (>=14) hard-errors on this 2018-era code: implicit declarations
+# (strcmp/close/tdestroy/bam_aux_drop_other) and K&R-style pointer usage.
+# Force-include the standard headers the source forgot and downgrade only
+# those specific warnings (see the oxo-flow failure catalog, "ale build").
+sed -i "s/^CFLAGS := -g -O3$/CFLAGS := -g -O3 -D_GNU_SOURCE -Wno-incompatible-pointer-types -Wno-int-conversion -Wno-implicit-function-declaration -include string.h -include stdlib.h -include unistd.h -include search.h/" src/makefile
+
 make
 
 install -m 0755 src/ALE "$CONDA_BIN/bin/ALE"
