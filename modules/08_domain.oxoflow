@@ -716,6 +716,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-MetaBAT2-bins-{sample}.tsv" 
         --join_prokaryotes \\
         --output_prefix SPAdes-MetaBAT2-bins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-MetaBAT2-bins-{sample}.binclassification.tsv ] || touch SPAdes-MetaBAT2-bins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -767,6 +769,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-MaxBin2-bins-{sample}.tsv" ]
         --join_prokaryotes \\
         --output_prefix SPAdes-MaxBin2-bins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-MaxBin2-bins-{sample}.binclassification.tsv ] || touch SPAdes-MaxBin2-bins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -818,6 +822,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-CONCOCT-bins-{sample}.tsv" ]
         --join_prokaryotes \\
         --output_prefix SPAdes-CONCOCT-bins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-CONCOCT-bins-{sample}.binclassification.tsv ] || touch SPAdes-CONCOCT-bins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -869,6 +875,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-COMEBin-bins-{sample}.tsv" ]
         --join_prokaryotes \\
         --output_prefix SPAdes-COMEBin-bins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-COMEBin-bins-{sample}.binclassification.tsv ] || touch SPAdes-COMEBin-bins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -920,6 +928,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-MetaBinner-bins-{sample}.tsv
         --join_prokaryotes \\
         --output_prefix SPAdes-MetaBinner-bins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-MetaBinner-bins-{sample}.binclassification.tsv ] || touch SPAdes-MetaBinner-bins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -971,6 +981,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-SemiBin2-bins-{sample}.tsv" 
         --join_prokaryotes \\
         --output_prefix SPAdes-SemiBin2-bins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-SemiBin2-bins-{sample}.binclassification.tsv ] || touch SPAdes-SemiBin2-bins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -1022,6 +1034,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-bins-{sample}.tsv"
         --join_prokaryotes \\
         --output_prefix MEGAHIT-MetaBAT2-bins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-MetaBAT2-bins-{sample}.binclassification.tsv ] || touch MEGAHIT-MetaBAT2-bins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -1073,6 +1087,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-MaxBin2-bins-{sample}.tsv" 
         --join_prokaryotes \\
         --output_prefix MEGAHIT-MaxBin2-bins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-MaxBin2-bins-{sample}.binclassification.tsv ] || touch MEGAHIT-MaxBin2-bins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -1124,6 +1140,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-CONCOCT-bins-{sample}.tsv" 
         --join_prokaryotes \\
         --output_prefix MEGAHIT-CONCOCT-bins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-CONCOCT-bins-{sample}.binclassification.tsv ] || touch MEGAHIT-CONCOCT-bins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -1175,6 +1193,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-COMEBin-bins-{sample}.tsv" 
         --join_prokaryotes \\
         --output_prefix MEGAHIT-COMEBin-bins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-COMEBin-bins-{sample}.binclassification.tsv ] || touch MEGAHIT-COMEBin-bins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -1226,6 +1246,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBinner-bins-{sample}.ts
         --join_prokaryotes \\
         --output_prefix MEGAHIT-MetaBinner-bins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-MetaBinner-bins-{sample}.binclassification.tsv ] || touch MEGAHIT-MetaBinner-bins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -1277,6 +1299,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-SemiBin2-bins-{sample}.tsv"
         --join_prokaryotes \\
         --output_prefix MEGAHIT-SemiBin2-bins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-SemiBin2-bins-{sample}.binclassification.tsv ] || touch MEGAHIT-SemiBin2-bins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -1328,6 +1352,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-MetaBAT2-unbins-{sample}.tsv
         --join_prokaryotes \\
         --output_prefix SPAdes-MetaBAT2-unbins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-MetaBAT2-unbins-{sample}.binclassification.tsv ] || touch SPAdes-MetaBAT2-unbins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -1379,6 +1405,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-MaxBin2-unbins-{sample}.tsv"
         --join_prokaryotes \\
         --output_prefix SPAdes-MaxBin2-unbins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-MaxBin2-unbins-{sample}.binclassification.tsv ] || touch SPAdes-MaxBin2-unbins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -1430,6 +1458,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-MetaBinner-unbins-{sample}.t
         --join_prokaryotes \\
         --output_prefix SPAdes-MetaBinner-unbins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-MetaBinner-unbins-{sample}.binclassification.tsv ] || touch SPAdes-MetaBinner-unbins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -1481,6 +1511,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-unbins-{sample}.ts
         --join_prokaryotes \\
         --output_prefix MEGAHIT-MetaBAT2-unbins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-MetaBAT2-unbins-{sample}.binclassification.tsv ] || touch MEGAHIT-MetaBAT2-unbins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -1532,6 +1564,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-MaxBin2-unbins-{sample}.tsv
         --join_prokaryotes \\
         --output_prefix MEGAHIT-MaxBin2-unbins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-MaxBin2-unbins-{sample}.binclassification.tsv ] || touch MEGAHIT-MaxBin2-unbins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
@@ -1583,6 +1617,8 @@ if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBinner-unbins-{sample}.
         --join_prokaryotes \\
         --output_prefix MEGAHIT-MetaBinner-unbins-{sample}
     mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-MetaBinner-unbins-{sample}.binclassification.tsv ] || touch MEGAHIT-MetaBinner-unbins-{sample}.binclassification.tsv
     mkdir prokarya
     mkdir bacteria
     mkdir archaea
