@@ -1,0 +1,8 @@
+# Environment for Tiara — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/tiara/tiara module environment (modules/nf-core/tiara/tiara/environment.yml); used by the --bin_domain_classification branch.
+name: tiara
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - conda-forge::tiara=1.0.3

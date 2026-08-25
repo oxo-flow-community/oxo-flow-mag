@@ -1,0 +1,8 @@
+# Environment for Trimmomatic — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/trimmomatic 0.39 module environment (modules/nf-core/trimmomatic/environment.yml); used by the clip_tool='trimmomatic' branch.
+name: trimmomatic
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::trimmomatic=0.39

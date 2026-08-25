@@ -2205,3 +2205,1465 @@ time_limit = "4h"
 
 [rules.environment]
 conda = "envs/ale.yaml"
+
+# ---------------------------------------------------------------------------
+# CHECKM (--run_checkm; off by default, matching the upstream
+# params.run_checkm=false). CHECKM_LINEAGEWF runs per (assembler, binner,
+# sample) on the bins and the unbinned chunks (the same globs the BUSCO and
+# GTDB-Tk rules use), then CHECKM_QA summarizes each run into the
+# {assembler}-{binner}-unclassified-unrefined[-_unbinned]-{sample}_qa.txt
+# table that the gtdbtk filter consumes via --checkm-qa-file. Bins are
+# decompressed into a scratch input_bins/ (CheckM -x fa), mirroring the
+# port's busco rules. Zero-bin groups emit touched artifacts, like the
+# upstream empty-group behaviour. The ~1.1GB lineage database is downloaded
+# by checkm itself on first use unless checkm_db points at a local unpacked
+# copy.
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "checkm_lineagewf_spades_metabat2"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined-{sample}_wf.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_wf.tsv",
+]
+depends_on = ["metabat2_spades", "split_fasta_metabat2_spades"]
+description = "CheckM lineage_wf of the SPAdes MetaBAT2 bins and chunks (upstream CHECKM_LINEAGEWF)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_checkm() {
+    # $1 = input glob pattern, $2 = prefix (lineage_wf output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm \\
+            lineage_wf \\
+            -t {threads} \\
+            -f "$2.tsv" \\
+            --tab_table \\
+            --pplacer_threads {threads} \\
+            -x fa \\
+            input_bins/ \\
+            "$2"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds; the qa rule guards on the missing lineage.ms
+        echo "checkm: no bins matched for {sample} ($2)" 1>&2
+        touch "$2.tsv"
+        mkdir -p "$2"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_lw_spades_metabat2_{sample} && cd .tmp/checkm_lw_spades_metabat2_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.fa.gz" SPAdes-MetaBAT2-unclassified-unrefined-{sample}_wf
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/SPAdes-MetaBAT2-{sample}*[0-9].fa.gz" SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_wf
+mv SPAdes-MetaBAT2-unclassified-unrefined-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_lw_spades_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_qa_spades_metabat2"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_wf",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+depends_on = ["checkm_lineagewf_spades_metabat2"]
+description = "CheckM qa of the SPAdes MetaBAT2 lineage_wf runs (upstream CHECKM_QA)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_qa() {
+    # $1 = lineage_wf output dir, $2 = qa output basename
+    if [ -f "$1/lineage.ms" ]; then
+        checkm \\
+            qa \\
+            --threads {threads} \\
+            --file "$2_qa.txt" \\
+            "$1/lineage.ms" \\
+            "$1" \\
+            -o 2 \\
+            --tab_table
+    else
+        touch "$2_qa.txt"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_qa_spades_metabat2_{sample} && cd .tmp/checkm_qa_spades_metabat2_{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined-{sample}_wf" SPAdes-MetaBAT2-unclassified-unrefined-{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_wf" SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}
+mv SPAdes-MetaBAT2-unclassified-unrefined-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_qa_spades_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_lineagewf_spades_maxbin2"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined-{sample}_wf.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_wf.tsv",
+]
+depends_on = ["maxbin2_spades", "split_fasta_maxbin2_spades"]
+description = "CheckM lineage_wf of the SPAdes MaxBin2 bins and chunks (upstream CHECKM_LINEAGEWF)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_checkm() {
+    # $1 = input glob pattern, $2 = prefix (lineage_wf output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm \\
+            lineage_wf \\
+            -t {threads} \\
+            -f "$2.tsv" \\
+            --tab_table \\
+            --pplacer_threads {threads} \\
+            -x fa \\
+            input_bins/ \\
+            "$2"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds; the qa rule guards on the missing lineage.ms
+        echo "checkm: no bins matched for {sample} ($2)" 1>&2
+        touch "$2.tsv"
+        mkdir -p "$2"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_lw_spades_maxbin2_{sample} && cd .tmp/checkm_lw_spades_maxbin2_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}*.fa.gz" SPAdes-MaxBin2-unclassified-unrefined-{sample}_wf
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/SPAdes-MaxBin2-{sample}*[0-9].fa.gz" SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_wf
+mv SPAdes-MaxBin2-unclassified-unrefined-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_lw_spades_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_qa_spades_maxbin2"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_wf",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+depends_on = ["checkm_lineagewf_spades_maxbin2"]
+description = "CheckM qa of the SPAdes MaxBin2 lineage_wf runs (upstream CHECKM_QA)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_qa() {
+    # $1 = lineage_wf output dir, $2 = qa output basename
+    if [ -f "$1/lineage.ms" ]; then
+        checkm \\
+            qa \\
+            --threads {threads} \\
+            --file "$2_qa.txt" \\
+            "$1/lineage.ms" \\
+            "$1" \\
+            -o 2 \\
+            --tab_table
+    else
+        touch "$2_qa.txt"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_qa_spades_maxbin2_{sample} && cd .tmp/checkm_qa_spades_maxbin2_{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined-{sample}_wf" SPAdes-MaxBin2-unclassified-unrefined-{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_wf" SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}
+mv SPAdes-MaxBin2-unclassified-unrefined-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_qa_spades_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_lineagewf_spades_concoct"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined-{sample}_wf.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_wf.tsv",
+]
+depends_on = ["concoct_extract_spades"]
+description = "CheckM lineage_wf of the SPAdes CONCOCT bins and chunks (upstream CHECKM_LINEAGEWF)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_checkm() {
+    # $1 = input glob pattern, $2 = prefix (lineage_wf output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm \\
+            lineage_wf \\
+            -t {threads} \\
+            -f "$2.tsv" \\
+            --tab_table \\
+            --pplacer_threads {threads} \\
+            -x fa \\
+            input_bins/ \\
+            "$2"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds; the qa rule guards on the missing lineage.ms
+        echo "checkm: no bins matched for {sample} ($2)" 1>&2
+        touch "$2.tsv"
+        mkdir -p "$2"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_lw_spades_concoct_{sample} && cd .tmp/checkm_lw_spades_concoct_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}*.fa.gz" SPAdes-CONCOCT-unclassified-unrefined-{sample}_wf
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned'); CONCOCT has no
+# split_fasta upstream, so the glob normally matches nothing
+run_checkm "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/SPAdes-CONCOCT-{sample}*[0-9].fa.gz" SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_wf
+mv SPAdes-CONCOCT-unclassified-unrefined-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_lw_spades_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_qa_spades_concoct"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_wf",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+depends_on = ["checkm_lineagewf_spades_concoct"]
+description = "CheckM qa of the SPAdes CONCOCT lineage_wf runs (upstream CHECKM_QA)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_qa() {
+    # $1 = lineage_wf output dir, $2 = qa output basename
+    if [ -f "$1/lineage.ms" ]; then
+        checkm \\
+            qa \\
+            --threads {threads} \\
+            --file "$2_qa.txt" \\
+            "$1/lineage.ms" \\
+            "$1" \\
+            -o 2 \\
+            --tab_table
+    else
+        touch "$2_qa.txt"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_qa_spades_concoct_{sample} && cd .tmp/checkm_qa_spades_concoct_{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined-{sample}_wf" SPAdes-CONCOCT-unclassified-unrefined-{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_wf" SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}
+mv SPAdes-CONCOCT-unclassified-unrefined-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_qa_spades_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_lineagewf_spades_comebin"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined-{sample}_wf.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_wf.tsv",
+]
+depends_on = ["comebin_spades"]
+description = "CheckM lineage_wf of the SPAdes COMEBin bins and chunks (upstream CHECKM_LINEAGEWF)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_checkm() {
+    # $1 = input glob pattern, $2 = prefix (lineage_wf output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm \\
+            lineage_wf \\
+            -t {threads} \\
+            -f "$2.tsv" \\
+            --tab_table \\
+            --pplacer_threads {threads} \\
+            -x fa \\
+            input_bins/ \\
+            "$2"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds; the qa rule guards on the missing lineage.ms
+        echo "checkm: no bins matched for {sample} ($2)" 1>&2
+        touch "$2.tsv"
+        mkdir -p "$2"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_lw_spades_comebin_{sample} && cd .tmp/checkm_lw_spades_comebin_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}*.fa.gz" SPAdes-COMEBin-unclassified-unrefined-{sample}_wf
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned'); COMEBin has no
+# split_fasta upstream, so the glob normally matches nothing
+run_checkm "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned/SPAdes-COMEBin-{sample}*[0-9].fa.gz" SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_wf
+mv SPAdes-COMEBin-unclassified-unrefined-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_lw_spades_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_qa_spades_comebin"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_wf",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+depends_on = ["checkm_lineagewf_spades_comebin"]
+description = "CheckM qa of the SPAdes COMEBin lineage_wf runs (upstream CHECKM_QA)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_qa() {
+    # $1 = lineage_wf output dir, $2 = qa output basename
+    if [ -f "$1/lineage.ms" ]; then
+        checkm \\
+            qa \\
+            --threads {threads} \\
+            --file "$2_qa.txt" \\
+            "$1/lineage.ms" \\
+            "$1" \\
+            -o 2 \\
+            --tab_table
+    else
+        touch "$2_qa.txt"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_qa_spades_comebin_{sample} && cd .tmp/checkm_qa_spades_comebin_{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined-{sample}_wf" SPAdes-COMEBin-unclassified-unrefined-{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_wf" SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}
+mv SPAdes-COMEBin-unclassified-unrefined-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_qa_spades_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_lineagewf_spades_metabinner"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined-{sample}_wf.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_wf.tsv",
+]
+depends_on = ["metabinner_bins_spades", "split_fasta_metabinner_spades"]
+description = "CheckM lineage_wf of the SPAdes MetaBinner bins and chunks (upstream CHECKM_LINEAGEWF)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_checkm() {
+    # $1 = input glob pattern, $2 = prefix (lineage_wf output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm \\
+            lineage_wf \\
+            -t {threads} \\
+            -f "$2.tsv" \\
+            --tab_table \\
+            --pplacer_threads {threads} \\
+            -x fa \\
+            input_bins/ \\
+            "$2"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds; the qa rule guards on the missing lineage.ms
+        echo "checkm: no bins matched for {sample} ($2)" 1>&2
+        touch "$2.tsv"
+        mkdir -p "$2"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_lw_spades_metabinner_{sample} && cd .tmp/checkm_lw_spades_metabinner_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sample}*.fa.gz" SPAdes-MetaBinner-unclassified-unrefined-{sample}_wf
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/SPAdes-MetaBinner-{sample}*[0-9].fa.gz" SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_wf
+mv SPAdes-MetaBinner-unclassified-unrefined-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_lw_spades_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_qa_spades_metabinner"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_wf",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+depends_on = ["checkm_lineagewf_spades_metabinner"]
+description = "CheckM qa of the SPAdes MetaBinner lineage_wf runs (upstream CHECKM_QA)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_qa() {
+    # $1 = lineage_wf output dir, $2 = qa output basename
+    if [ -f "$1/lineage.ms" ]; then
+        checkm \\
+            qa \\
+            --threads {threads} \\
+            --file "$2_qa.txt" \\
+            "$1/lineage.ms" \\
+            "$1" \\
+            -o 2 \\
+            --tab_table
+    else
+        touch "$2_qa.txt"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_qa_spades_metabinner_{sample} && cd .tmp/checkm_qa_spades_metabinner_{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined-{sample}_wf" SPAdes-MetaBinner-unclassified-unrefined-{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_wf" SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}
+mv SPAdes-MetaBinner-unclassified-unrefined-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_qa_spades_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_lineagewf_spades_semibin2"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined-{sample}_wf.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_wf.tsv",
+]
+depends_on = ["semibin_spades"]
+description = "CheckM lineage_wf of the SPAdes SemiBin2 bins and chunks (upstream CHECKM_LINEAGEWF)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_checkm() {
+    # $1 = input glob pattern, $2 = prefix (lineage_wf output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm \\
+            lineage_wf \\
+            -t {threads} \\
+            -f "$2.tsv" \\
+            --tab_table \\
+            --pplacer_threads {threads} \\
+            -x fa \\
+            input_bins/ \\
+            "$2"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds; the qa rule guards on the missing lineage.ms
+        echo "checkm: no bins matched for {sample} ($2)" 1>&2
+        touch "$2.tsv"
+        mkdir -p "$2"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_lw_spades_semibin2_{sample} && cd .tmp/checkm_lw_spades_semibin2_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}*.fa.gz" SPAdes-SemiBin2-unclassified-unrefined-{sample}_wf
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned'); SemiBin2 has no
+# split_fasta upstream, so the glob normally matches nothing
+run_checkm "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/SPAdes-SemiBin2-{sample}*[0-9].fa.gz" SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_wf
+mv SPAdes-SemiBin2-unclassified-unrefined-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_lw_spades_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_qa_spades_semibin2"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_wf",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+depends_on = ["checkm_lineagewf_spades_semibin2"]
+description = "CheckM qa of the SPAdes SemiBin2 lineage_wf runs (upstream CHECKM_QA)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_qa() {
+    # $1 = lineage_wf output dir, $2 = qa output basename
+    if [ -f "$1/lineage.ms" ]; then
+        checkm \\
+            qa \\
+            --threads {threads} \\
+            --file "$2_qa.txt" \\
+            "$1/lineage.ms" \\
+            "$1" \\
+            -o 2 \\
+            --tab_table
+    else
+        touch "$2_qa.txt"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_qa_spades_semibin2_{sample} && cd .tmp/checkm_qa_spades_semibin2_{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined-{sample}_wf" SPAdes-SemiBin2-unclassified-unrefined-{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_wf" SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}
+mv SPAdes-SemiBin2-unclassified-unrefined-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_qa_spades_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_lineagewf_megahit_metabat2"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_wf.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_wf.tsv",
+]
+depends_on = ["metabat2_megahit", "split_fasta_metabat2_megahit"]
+description = "CheckM lineage_wf of the MEGAHIT MetaBAT2 bins and chunks (upstream CHECKM_LINEAGEWF)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_checkm() {
+    # $1 = input glob pattern, $2 = prefix (lineage_wf output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm \\
+            lineage_wf \\
+            -t {threads} \\
+            -f "$2.tsv" \\
+            --tab_table \\
+            --pplacer_threads {threads} \\
+            -x fa \\
+            input_bins/ \\
+            "$2"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds; the qa rule guards on the missing lineage.ms
+        echo "checkm: no bins matched for {sample} ($2)" 1>&2
+        touch "$2.tsv"
+        mkdir -p "$2"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_lw_megahit_metabat2_{sample} && cd .tmp/checkm_lw_megahit_metabat2_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*.fa.gz" MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_wf
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/MEGAHIT-MetaBAT2-{sample}*[0-9].fa.gz" MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_wf
+mv MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_lw_megahit_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_qa_megahit_metabat2"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_wf",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+depends_on = ["checkm_lineagewf_megahit_metabat2"]
+description = "CheckM qa of the MEGAHIT MetaBAT2 lineage_wf runs (upstream CHECKM_QA)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_qa() {
+    # $1 = lineage_wf output dir, $2 = qa output basename
+    if [ -f "$1/lineage.ms" ]; then
+        checkm \\
+            qa \\
+            --threads {threads} \\
+            --file "$2_qa.txt" \\
+            "$1/lineage.ms" \\
+            "$1" \\
+            -o 2 \\
+            --tab_table
+    else
+        touch "$2_qa.txt"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_qa_megahit_metabat2_{sample} && cd .tmp/checkm_qa_megahit_metabat2_{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_wf" MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_wf" MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}
+mv MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_qa_megahit_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_lineagewf_megahit_maxbin2"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_wf.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_wf.tsv",
+]
+depends_on = ["maxbin2_megahit", "split_fasta_maxbin2_megahit"]
+description = "CheckM lineage_wf of the MEGAHIT MaxBin2 bins and chunks (upstream CHECKM_LINEAGEWF)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_checkm() {
+    # $1 = input glob pattern, $2 = prefix (lineage_wf output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm \\
+            lineage_wf \\
+            -t {threads} \\
+            -f "$2.tsv" \\
+            --tab_table \\
+            --pplacer_threads {threads} \\
+            -x fa \\
+            input_bins/ \\
+            "$2"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds; the qa rule guards on the missing lineage.ms
+        echo "checkm: no bins matched for {sample} ($2)" 1>&2
+        touch "$2.tsv"
+        mkdir -p "$2"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_lw_megahit_maxbin2_{sample} && cd .tmp/checkm_lw_megahit_maxbin2_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}*.fa.gz" MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_wf
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/MEGAHIT-MaxBin2-{sample}*[0-9].fa.gz" MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_wf
+mv MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_lw_megahit_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_qa_megahit_maxbin2"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_wf",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+depends_on = ["checkm_lineagewf_megahit_maxbin2"]
+description = "CheckM qa of the MEGAHIT MaxBin2 lineage_wf runs (upstream CHECKM_QA)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_qa() {
+    # $1 = lineage_wf output dir, $2 = qa output basename
+    if [ -f "$1/lineage.ms" ]; then
+        checkm \\
+            qa \\
+            --threads {threads} \\
+            --file "$2_qa.txt" \\
+            "$1/lineage.ms" \\
+            "$1" \\
+            -o 2 \\
+            --tab_table
+    else
+        touch "$2_qa.txt"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_qa_megahit_maxbin2_{sample} && cd .tmp/checkm_qa_megahit_maxbin2_{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_wf" MEGAHIT-MaxBin2-unclassified-unrefined-{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_wf" MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}
+mv MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_qa_megahit_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_lineagewf_megahit_concoct"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_wf.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_wf.tsv",
+]
+depends_on = ["concoct_extract_megahit"]
+description = "CheckM lineage_wf of the MEGAHIT CONCOCT bins and chunks (upstream CHECKM_LINEAGEWF)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_checkm() {
+    # $1 = input glob pattern, $2 = prefix (lineage_wf output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm \\
+            lineage_wf \\
+            -t {threads} \\
+            -f "$2.tsv" \\
+            --tab_table \\
+            --pplacer_threads {threads} \\
+            -x fa \\
+            input_bins/ \\
+            "$2"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds; the qa rule guards on the missing lineage.ms
+        echo "checkm: no bins matched for {sample} ($2)" 1>&2
+        touch "$2.tsv"
+        mkdir -p "$2"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_lw_megahit_concoct_{sample} && cd .tmp/checkm_lw_megahit_concoct_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}*.fa.gz" MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_wf
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned'); CONCOCT has no
+# split_fasta upstream, so the glob normally matches nothing
+run_checkm "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/MEGAHIT-CONCOCT-{sample}*[0-9].fa.gz" MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_wf
+mv MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_lw_megahit_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_qa_megahit_concoct"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_wf",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+depends_on = ["checkm_lineagewf_megahit_concoct"]
+description = "CheckM qa of the MEGAHIT CONCOCT lineage_wf runs (upstream CHECKM_QA)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_qa() {
+    # $1 = lineage_wf output dir, $2 = qa output basename
+    if [ -f "$1/lineage.ms" ]; then
+        checkm \\
+            qa \\
+            --threads {threads} \\
+            --file "$2_qa.txt" \\
+            "$1/lineage.ms" \\
+            "$1" \\
+            -o 2 \\
+            --tab_table
+    else
+        touch "$2_qa.txt"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_qa_megahit_concoct_{sample} && cd .tmp/checkm_qa_megahit_concoct_{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_wf" MEGAHIT-CONCOCT-unclassified-unrefined-{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_wf" MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}
+mv MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_qa_megahit_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_lineagewf_megahit_comebin"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined-{sample}_wf.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_wf.tsv",
+]
+depends_on = ["comebin_megahit"]
+description = "CheckM lineage_wf of the MEGAHIT COMEBin bins and chunks (upstream CHECKM_LINEAGEWF)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_checkm() {
+    # $1 = input glob pattern, $2 = prefix (lineage_wf output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm \\
+            lineage_wf \\
+            -t {threads} \\
+            -f "$2.tsv" \\
+            --tab_table \\
+            --pplacer_threads {threads} \\
+            -x fa \\
+            input_bins/ \\
+            "$2"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds; the qa rule guards on the missing lineage.ms
+        echo "checkm: no bins matched for {sample} ($2)" 1>&2
+        touch "$2.tsv"
+        mkdir -p "$2"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_lw_megahit_comebin_{sample} && cd .tmp/checkm_lw_megahit_comebin_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}*.fa.gz" MEGAHIT-COMEBin-unclassified-unrefined-{sample}_wf
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned'); COMEBin has no
+# split_fasta upstream, so the glob normally matches nothing
+run_checkm "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned/MEGAHIT-COMEBin-{sample}*[0-9].fa.gz" MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_wf
+mv MEGAHIT-COMEBin-unclassified-unrefined-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_lw_megahit_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_qa_megahit_comebin"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_wf",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+depends_on = ["checkm_lineagewf_megahit_comebin"]
+description = "CheckM qa of the MEGAHIT COMEBin lineage_wf runs (upstream CHECKM_QA)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_qa() {
+    # $1 = lineage_wf output dir, $2 = qa output basename
+    if [ -f "$1/lineage.ms" ]; then
+        checkm \\
+            qa \\
+            --threads {threads} \\
+            --file "$2_qa.txt" \\
+            "$1/lineage.ms" \\
+            "$1" \\
+            -o 2 \\
+            --tab_table
+    else
+        touch "$2_qa.txt"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_qa_megahit_comebin_{sample} && cd .tmp/checkm_qa_megahit_comebin_{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined-{sample}_wf" MEGAHIT-COMEBin-unclassified-unrefined-{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_wf" MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}
+mv MEGAHIT-COMEBin-unclassified-unrefined-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_qa_megahit_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_lineagewf_megahit_metabinner"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_wf.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_wf.tsv",
+]
+depends_on = ["metabinner_bins_megahit", "split_fasta_metabinner_megahit"]
+description = "CheckM lineage_wf of the MEGAHIT MetaBinner bins and chunks (upstream CHECKM_LINEAGEWF)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_checkm() {
+    # $1 = input glob pattern, $2 = prefix (lineage_wf output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm \\
+            lineage_wf \\
+            -t {threads} \\
+            -f "$2.tsv" \\
+            --tab_table \\
+            --pplacer_threads {threads} \\
+            -x fa \\
+            input_bins/ \\
+            "$2"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds; the qa rule guards on the missing lineage.ms
+        echo "checkm: no bins matched for {sample} ($2)" 1>&2
+        touch "$2.tsv"
+        mkdir -p "$2"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_lw_megahit_metabinner_{sample} && cd .tmp/checkm_lw_megahit_metabinner_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{sample}*.fa.gz" MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_wf
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/MEGAHIT-MetaBinner-{sample}*[0-9].fa.gz" MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_wf
+mv MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_lw_megahit_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_qa_megahit_metabinner"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_wf",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+depends_on = ["checkm_lineagewf_megahit_metabinner"]
+description = "CheckM qa of the MEGAHIT MetaBinner lineage_wf runs (upstream CHECKM_QA)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_qa() {
+    # $1 = lineage_wf output dir, $2 = qa output basename
+    if [ -f "$1/lineage.ms" ]; then
+        checkm \\
+            qa \\
+            --threads {threads} \\
+            --file "$2_qa.txt" \\
+            "$1/lineage.ms" \\
+            "$1" \\
+            -o 2 \\
+            --tab_table
+    else
+        touch "$2_qa.txt"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_qa_megahit_metabinner_{sample} && cd .tmp/checkm_qa_megahit_metabinner_{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_wf" MEGAHIT-MetaBinner-unclassified-unrefined-{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_wf" MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}
+mv MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_qa_megahit_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_lineagewf_megahit_semibin2"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_wf.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_wf.tsv",
+]
+depends_on = ["semibin_megahit"]
+description = "CheckM lineage_wf of the MEGAHIT SemiBin2 bins and chunks (upstream CHECKM_LINEAGEWF)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_checkm() {
+    # $1 = input glob pattern, $2 = prefix (lineage_wf output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm \\
+            lineage_wf \\
+            -t {threads} \\
+            -f "$2.tsv" \\
+            --tab_table \\
+            --pplacer_threads {threads} \\
+            -x fa \\
+            input_bins/ \\
+            "$2"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds; the qa rule guards on the missing lineage.ms
+        echo "checkm: no bins matched for {sample} ($2)" 1>&2
+        touch "$2.tsv"
+        mkdir -p "$2"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_lw_megahit_semibin2_{sample} && cd .tmp/checkm_lw_megahit_semibin2_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}*.fa.gz" MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_wf
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned'); SemiBin2 has no
+# split_fasta upstream, so the glob normally matches nothing
+run_checkm "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/MEGAHIT-SemiBin2-{sample}*[0-9].fa.gz" MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_wf
+mv MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_wf* "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_lw_megahit_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "checkm_qa_megahit_semibin2"
+when = "config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_wf",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_wf",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+depends_on = ["checkm_lineagewf_megahit_semibin2"]
+description = "CheckM qa of the MEGAHIT SemiBin2 lineage_wf runs (upstream CHECKM_QA)"
+shell = """
+wd=$(pwd)
+if [ -n "{config.checkm_db}" ]; then
+    export CHECKM_DATA_PATH="$wd/{config.checkm_db}"
+fi
+run_qa() {
+    # $1 = lineage_wf output dir, $2 = qa output basename
+    if [ -f "$1/lineage.ms" ]; then
+        checkm \\
+            qa \\
+            --threads {threads} \\
+            --file "$2_qa.txt" \\
+            "$1/lineage.ms" \\
+            "$1" \\
+            -o 2 \\
+            --tab_table
+    else
+        touch "$2_qa.txt"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM
+mkdir -p .tmp/checkm_qa_megahit_semibin2_{sample} && cd .tmp/checkm_qa_megahit_semibin2_{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_wf" MEGAHIT-SemiBin2-unclassified-unrefined-{sample}
+run_qa "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_wf" MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}
+mv MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+mv MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_qa.txt "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/"
+cd "$wd"
+rm -rf .tmp/checkm_qa_megahit_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/checkm.yaml"
+
+[[rules]]
+name = "concat_checkm_tsv"
+when = "config.run_checkm"
+input = ["{config.out_dir}/GenomeBinning/QC/CheckM"]
+output = ["{config.out_dir}/GenomeBinning/QC/checkm_summary.tsv"]
+depends_on = [
+    "checkm_qa_spades_metabat2",
+    "checkm_qa_spades_maxbin2",
+    "checkm_qa_spades_concoct",
+    "checkm_qa_spades_comebin",
+    "checkm_qa_spades_metabinner",
+    "checkm_qa_spades_semibin2",
+    "checkm_qa_megahit_metabat2",
+    "checkm_qa_megahit_maxbin2",
+    "checkm_qa_megahit_concoct",
+    "checkm_qa_megahit_comebin",
+    "checkm_qa_megahit_metabinner",
+    "checkm_qa_megahit_semibin2",
+]
+description = "Concatenate all CheckM qa tables (upstream CONCAT_CHECKM_TSV, qsv cat rowskey)"
+shell = """
+export QSV_SKIP_FORMAT_CHECK=1
+mkdir -p {config.out_dir}/GenomeBinning/QC
+if ls {config.out_dir}/GenomeBinning/QC/CheckM/*_qa.txt >/dev/null 2>&1; then
+    qsv cat rowskey --delimiter '\\t' -o checkm_summary.tsv {config.out_dir}/GenomeBinning/QC/CheckM/*_qa.txt
+else
+    touch checkm_summary.tsv
+fi
+mv checkm_summary.tsv {config.out_dir}/GenomeBinning/QC/
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/qsv.yaml"

@@ -1,0 +1,8 @@
+# Environment for AdapterRemoval — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/adapterremoval 2.3.2 module environment (modules/nf-core/adapterremoval/environment.yml); used by the clip_tool='adapterremoval' branch.
+name: adapterremoval
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::adapterremoval=2.3.2

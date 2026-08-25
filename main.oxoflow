@@ -54,11 +54,27 @@ gtdb_db = ""
 # README requirements); run_gtdbtk=false runs the full pipeline minus the
 # GTDB-Tk classification (the documented live-test contract).
 run_gtdbtk = true
-# fastp clipping (upstream params with the same defaults)
+# Clipping (upstream params with the same defaults; --clip_tool selects the
+# adapter trimmer, fastp is the upstream default)
+clip_tool = "fastp"
 reads_minlength = 15
 fastp_qualified_quality = 15
 fastp_cut_mean_quality = 15
 fastp_trim_polyg = false
+adapterremoval_minquality = 2
+adapterremoval_adapter1 = "AGATCGGAAGAGCACACGTCTGAACTCCAGTCACNNNNNNATCTCGTATGCCGTCTTCTGCTTG"
+adapterremoval_adapter2 = "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGTAGATCTCGGTGGTCGCCGTATCATT"
+adapterremoval_trim_quality_stretch = false
+# Host read removal (upstream --host_fasta / --host_fasta_bowtie2index; the
+# reference fasta is required, the prebuilt bowtie2 index is optional and
+# skips the build rule)
+host_fasta = ""
+host_fasta_bowtie2index = ""
+host_removal_verysensitive = false
+# Read normalization (upstream --bbnorm; runs between phiX removal and assembly)
+bbnorm = false
+bbnorm_target = 100
+bbnorm_min = 5
 # Bin size filtering (upstream --bin_min_size / --bin_max_size; defaults
 # 0/null make the seqkit-based filter a no-op)
 bin_min_size = 0
@@ -83,6 +99,16 @@ gtdbtk_min_af = 0.65
 gtdbtk_pplacer_cpus = 1
 gtdbtk_use_full_tree = false
 gtdbtk_place_species = false
+# DAS Tool bin refinement (upstream --refine_bins_dastool / --refine_bins_dastool_threshold)
+refine_bins_dastool = false
+refine_bins_dastool_threshold = 0.5
+# CheckM bin QC (upstream --run_checkm; the 1.1GB lineage database is
+# downloaded at env creation and unpacked at run time — see README)
+run_checkm = false
+checkm_db = ""
+# Domain classification with Tiara (upstream --bin_domain_classification / --tiara_min_length)
+bin_domain_classification = false
+tiara_min_length = 3000
 # PROKKA (upstream params with the same defaults)
 prokka_with_compliance = false
 prokka_fast_mode = false
@@ -123,3 +149,9 @@ path = "modules/05_binqc.oxoflow"
 
 [[include]]
 path = "modules/06_taxonomy.oxoflow"
+
+[[include]]
+path = "modules/07_refinement.oxoflow"
+
+[[include]]
+path = "modules/08_domain.oxoflow"
