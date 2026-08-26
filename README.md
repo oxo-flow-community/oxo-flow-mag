@@ -184,7 +184,18 @@ bash test/run.sh    # static acceptance: validate + lint + dry-run + debug
 
 The acceptance test needs only `oxo-flow` (v0.12.0+) on `PATH` (override with `OXO=/path/to/oxo-flow`); no conda environments or databases are required for validation.
 
-**Status: default path live-verified** (end-to-end run on reference data passed with `run_gtdbtk=false` — the documented live-test contract, since a real GTDB-Tk run needs the ~100 GB reference database). The when-gated branches are statically verified: `validate` + `lint` + `dry-run` confirm each gate activates exactly its own branch with the default plan unchanged (see the gated-branches table). Runtime behavior of the underlying tools is unchanged from upstream nf-core/mag.
+**Status: live-verified on bioinfo-wsx** (real metagenome reference data, `run_gtdbtk=false` — the documented live-test contract, since a real GTDB-Tk run needs the ~100 GB reference database). Live queue results:
+
+| Toggle | Result |
+|---|---|
+| default | ✅ PASS |
+| `clip_tool=trimmomatic` | ✅ PASS |
+| `bbnorm=true` | ✅ PASS |
+| `refine_bins_dastool=true` | ✅ PASS (MEGAHIT + SPAdes, MetaBAT2/COMEBin/SemiBin2/… binning + DASTool refinement) |
+| `run_checkm=true` | ✅ PASS (quast + CheckM lineage_wf on all bin sets) |
+| `bin_domain_classification=true` | ✅ PASS (TIARA_TIARA per-contig + TIARA_CLASSIFY per bin set; zero-classified sets emit an empty tsv — live-verified guard, see commit b67191b) |
+
+The remaining when-gated branches are statically verified: `validate` + `lint` + `dry-run` confirm each gate activates exactly its own branch with the default plan unchanged (see the gated-branches table). Runtime behavior of the underlying tools is unchanged from upstream nf-core/mag.
 
 ## License
 
