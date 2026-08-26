@@ -1,0 +1,9 @@
+# Environment for BBNorm — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/bbmap/bbnorm module environment (modules/nf-core/bbmap/bbnorm/environment.yml); used by the --bbnorm branch.
+name: bbmap
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::bbmap=39.18
+  - pigz=2.8

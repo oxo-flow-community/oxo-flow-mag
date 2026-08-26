@@ -1,0 +1,1071 @@
+[workflow]
+name = "07_refinement"
+description = "nf-core/mag 5.5.0 binning_refinement fragment (--refine_bins_dastool; off by default)"
+# ---------------------------------------------------------------------------
+# BINNING REFINEMENT (nf-core/mag 5.5.0, gated on config.refine_bins_dastool):
+# per (assembler, binner, sample) RENAME_PREDASTOOL decompresses and renames
+# the bins to {assembler}-{binner}Refined-{sample}.{num}.fa, then
+# DASTOOL_FASTATOCONTIG2BIN builds the contig2bin table, then one
+# DASTOOL_DASTOOL per (assembler, sample) fuses the six binners with
+# DAS_Tool, and RENAME_POSTDASTOOL renames unbinned.fa and re-compresses the
+# refined bins for publication. Everything is when-gated on
+# config.refine_bins_dastool (upstream params.refine_bins_dastool=false), so
+# the default plan is untouched.
+# ---------------------------------------------------------------------------
+
+# RENAME_PREDASTOOL (label process_single; regex rename + gunzip). Each rule
+# handles one (assembler, binner) pair; zero-bin groups emit an empty dir.
+[[rules]]
+name = "dastool_rename_pre_spades_metabat2"
+when = "config.refine_bins_dastool"
+input = ["{config.out_dir}/GenomeBinning/MetaBAT2/bins"]
+output = ["intermediates/refinement/renamed_bins/SPAdes-MetaBAT2Refined-{sample}"]
+depends_on = ["metabat2_spades"]
+description = "Rename and decompress the SPAdes MetaBAT2 bins for DAS Tool (upstream RENAME_PREDASTOOL)"
+shell = """
+wd=$(pwd)
+outdir=intermediates/refinement/renamed_bins/SPAdes-MetaBAT2Refined-{sample}
+mkdir -p "$outdir"
+for bin in "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}"*.fa.gz; do
+    [ -e "$bin" ] || continue
+    base=$(basename "$bin" .gz)
+    # DAS Tool works on uncompressed fasta, so decompress gzipped bins first
+    if [[ "$base" =~ SPAdes-MetaBAT2-{sample}.([_[:alnum:]]+).fa ]]; then
+        num=${BASH_REMATCH[1]}
+        gzip -cdf "$bin" > "$wd/$outdir/SPAdes-MetaBAT2Refined-{sample}.${num}.fa"
+    else
+        echo "ERROR: the bin filename $base does not match the expected format 'SPAdes-MetaBAT2-{sample}.([_[:alnum:]]+).fa'!" 1>&2
+        exit 1
+    fi
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+[[rules]]
+name = "dastool_rename_pre_spades_maxbin2"
+when = "config.refine_bins_dastool"
+input = ["{config.out_dir}/GenomeBinning/MaxBin2/bins"]
+output = ["intermediates/refinement/renamed_bins/SPAdes-MaxBin2Refined-{sample}"]
+depends_on = ["maxbin2_spades"]
+description = "Rename and decompress the SPAdes MaxBin2 bins for DAS Tool (upstream RENAME_PREDASTOOL)"
+shell = """
+wd=$(pwd)
+outdir=intermediates/refinement/renamed_bins/SPAdes-MaxBin2Refined-{sample}
+mkdir -p "$outdir"
+for bin in "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}"*.fa.gz; do
+    [ -e "$bin" ] || continue
+    base=$(basename "$bin" .gz)
+    # DAS Tool works on uncompressed fasta, so decompress gzipped bins first
+    if [[ "$base" =~ SPAdes-MaxBin2-{sample}.([_[:alnum:]]+).fa ]]; then
+        num=${BASH_REMATCH[1]}
+        gzip -cdf "$bin" > "$wd/$outdir/SPAdes-MaxBin2Refined-{sample}.${num}.fa"
+    else
+        echo "ERROR: the bin filename $base does not match the expected format 'SPAdes-MaxBin2-{sample}.([_[:alnum:]]+).fa'!" 1>&2
+        exit 1
+    fi
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+[[rules]]
+name = "dastool_rename_pre_spades_concoct"
+when = "config.refine_bins_dastool"
+input = ["{config.out_dir}/GenomeBinning/CONCOCT/bins"]
+output = ["intermediates/refinement/renamed_bins/SPAdes-CONCOCTRefined-{sample}"]
+depends_on = ["concoct_extract_spades"]
+description = "Rename and decompress the SPAdes CONCOCT bins for DAS Tool (upstream RENAME_PREDASTOOL)"
+shell = """
+wd=$(pwd)
+outdir=intermediates/refinement/renamed_bins/SPAdes-CONCOCTRefined-{sample}
+mkdir -p "$outdir"
+for bin in "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}"*.fa.gz; do
+    [ -e "$bin" ] || continue
+    base=$(basename "$bin" .gz)
+    # DAS Tool works on uncompressed fasta, so decompress gzipped bins first
+    if [[ "$base" =~ SPAdes-CONCOCT-{sample}.([_[:alnum:]]+).fa ]]; then
+        num=${BASH_REMATCH[1]}
+        gzip -cdf "$bin" > "$wd/$outdir/SPAdes-CONCOCTRefined-{sample}.${num}.fa"
+    else
+        echo "ERROR: the bin filename $base does not match the expected format 'SPAdes-CONCOCT-{sample}.([_[:alnum:]]+).fa'!" 1>&2
+        exit 1
+    fi
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+[[rules]]
+name = "dastool_rename_pre_spades_comebin"
+when = "config.refine_bins_dastool"
+input = ["{config.out_dir}/GenomeBinning/COMEBin/bins"]
+output = ["intermediates/refinement/renamed_bins/SPAdes-COMEBinRefined-{sample}"]
+depends_on = ["comebin_spades"]
+description = "Rename and decompress the SPAdes COMEBin bins for DAS Tool (upstream RENAME_PREDASTOOL)"
+shell = """
+wd=$(pwd)
+outdir=intermediates/refinement/renamed_bins/SPAdes-COMEBinRefined-{sample}
+mkdir -p "$outdir"
+for bin in "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}"*.fa.gz; do
+    [ -e "$bin" ] || continue
+    base=$(basename "$bin" .gz)
+    # DAS Tool works on uncompressed fasta, so decompress gzipped bins first
+    if [[ "$base" =~ SPAdes-COMEBin-{sample}.([_[:alnum:]]+).fa ]]; then
+        num=${BASH_REMATCH[1]}
+        gzip -cdf "$bin" > "$wd/$outdir/SPAdes-COMEBinRefined-{sample}.${num}.fa"
+    else
+        echo "ERROR: the bin filename $base does not match the expected format 'SPAdes-COMEBin-{sample}.([_[:alnum:]]+).fa'!" 1>&2
+        exit 1
+    fi
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+[[rules]]
+name = "dastool_rename_pre_spades_metabinner"
+when = "config.refine_bins_dastool"
+input = ["{config.out_dir}/GenomeBinning/MetaBinner/bins"]
+output = ["intermediates/refinement/renamed_bins/SPAdes-MetaBinnerRefined-{sample}"]
+depends_on = ["metabinner_bins_spades"]
+description = "Rename and decompress the SPAdes MetaBinner bins for DAS Tool (upstream RENAME_PREDASTOOL)"
+shell = """
+wd=$(pwd)
+outdir=intermediates/refinement/renamed_bins/SPAdes-MetaBinnerRefined-{sample}
+mkdir -p "$outdir"
+for bin in "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sample}"*.fa.gz; do
+    [ -e "$bin" ] || continue
+    base=$(basename "$bin" .gz)
+    # DAS Tool works on uncompressed fasta, so decompress gzipped bins first
+    if [[ "$base" =~ SPAdes-MetaBinner-{sample}.([_[:alnum:]]+).fa ]]; then
+        num=${BASH_REMATCH[1]}
+        gzip -cdf "$bin" > "$wd/$outdir/SPAdes-MetaBinnerRefined-{sample}.${num}.fa"
+    else
+        echo "ERROR: the bin filename $base does not match the expected format 'SPAdes-MetaBinner-{sample}.([_[:alnum:]]+).fa'!" 1>&2
+        exit 1
+    fi
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+[[rules]]
+name = "dastool_rename_pre_spades_semibin2"
+when = "config.refine_bins_dastool"
+input = ["{config.out_dir}/GenomeBinning/SemiBin2/bins"]
+output = ["intermediates/refinement/renamed_bins/SPAdes-SemiBin2Refined-{sample}"]
+depends_on = ["semibin_spades"]
+description = "Rename and decompress the SPAdes SemiBin2 bins for DAS Tool (upstream RENAME_PREDASTOOL)"
+shell = """
+wd=$(pwd)
+outdir=intermediates/refinement/renamed_bins/SPAdes-SemiBin2Refined-{sample}
+mkdir -p "$outdir"
+for bin in "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}"*.fa.gz; do
+    [ -e "$bin" ] || continue
+    base=$(basename "$bin" .gz)
+    # DAS Tool works on uncompressed fasta, so decompress gzipped bins first
+    if [[ "$base" =~ SPAdes-SemiBin2-{sample}.([_[:alnum:]]+).fa ]]; then
+        num=${BASH_REMATCH[1]}
+        gzip -cdf "$bin" > "$wd/$outdir/SPAdes-SemiBin2Refined-{sample}.${num}.fa"
+    else
+        echo "ERROR: the bin filename $base does not match the expected format 'SPAdes-SemiBin2-{sample}.([_[:alnum:]]+).fa'!" 1>&2
+        exit 1
+    fi
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+[[rules]]
+name = "dastool_rename_pre_megahit_metabat2"
+when = "config.refine_bins_dastool"
+input = ["{config.out_dir}/GenomeBinning/MetaBAT2/bins"]
+output = ["intermediates/refinement/renamed_bins/MEGAHIT-MetaBAT2Refined-{sample}"]
+depends_on = ["metabat2_megahit"]
+description = "Rename and decompress the MEGAHIT MetaBAT2 bins for DAS Tool (upstream RENAME_PREDASTOOL)"
+shell = """
+wd=$(pwd)
+outdir=intermediates/refinement/renamed_bins/MEGAHIT-MetaBAT2Refined-{sample}
+mkdir -p "$outdir"
+for bin in "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}"*.fa.gz; do
+    [ -e "$bin" ] || continue
+    base=$(basename "$bin" .gz)
+    # DAS Tool works on uncompressed fasta, so decompress gzipped bins first
+    if [[ "$base" =~ MEGAHIT-MetaBAT2-{sample}.([_[:alnum:]]+).fa ]]; then
+        num=${BASH_REMATCH[1]}
+        gzip -cdf "$bin" > "$wd/$outdir/MEGAHIT-MetaBAT2Refined-{sample}.${num}.fa"
+    else
+        echo "ERROR: the bin filename $base does not match the expected format 'MEGAHIT-MetaBAT2-{sample}.([_[:alnum:]]+).fa'!" 1>&2
+        exit 1
+    fi
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+[[rules]]
+name = "dastool_rename_pre_megahit_maxbin2"
+when = "config.refine_bins_dastool"
+input = ["{config.out_dir}/GenomeBinning/MaxBin2/bins"]
+output = ["intermediates/refinement/renamed_bins/MEGAHIT-MaxBin2Refined-{sample}"]
+depends_on = ["maxbin2_megahit"]
+description = "Rename and decompress the MEGAHIT MaxBin2 bins for DAS Tool (upstream RENAME_PREDASTOOL)"
+shell = """
+wd=$(pwd)
+outdir=intermediates/refinement/renamed_bins/MEGAHIT-MaxBin2Refined-{sample}
+mkdir -p "$outdir"
+for bin in "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}"*.fa.gz; do
+    [ -e "$bin" ] || continue
+    base=$(basename "$bin" .gz)
+    # DAS Tool works on uncompressed fasta, so decompress gzipped bins first
+    if [[ "$base" =~ MEGAHIT-MaxBin2-{sample}.([_[:alnum:]]+).fa ]]; then
+        num=${BASH_REMATCH[1]}
+        gzip -cdf "$bin" > "$wd/$outdir/MEGAHIT-MaxBin2Refined-{sample}.${num}.fa"
+    else
+        echo "ERROR: the bin filename $base does not match the expected format 'MEGAHIT-MaxBin2-{sample}.([_[:alnum:]]+).fa'!" 1>&2
+        exit 1
+    fi
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+[[rules]]
+name = "dastool_rename_pre_megahit_concoct"
+when = "config.refine_bins_dastool"
+input = ["{config.out_dir}/GenomeBinning/CONCOCT/bins"]
+output = ["intermediates/refinement/renamed_bins/MEGAHIT-CONCOCTRefined-{sample}"]
+depends_on = ["concoct_extract_megahit"]
+description = "Rename and decompress the MEGAHIT CONCOCT bins for DAS Tool (upstream RENAME_PREDASTOOL)"
+shell = """
+wd=$(pwd)
+outdir=intermediates/refinement/renamed_bins/MEGAHIT-CONCOCTRefined-{sample}
+mkdir -p "$outdir"
+for bin in "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}"*.fa.gz; do
+    [ -e "$bin" ] || continue
+    base=$(basename "$bin" .gz)
+    # DAS Tool works on uncompressed fasta, so decompress gzipped bins first
+    if [[ "$base" =~ MEGAHIT-CONCOCT-{sample}.([_[:alnum:]]+).fa ]]; then
+        num=${BASH_REMATCH[1]}
+        gzip -cdf "$bin" > "$wd/$outdir/MEGAHIT-CONCOCTRefined-{sample}.${num}.fa"
+    else
+        echo "ERROR: the bin filename $base does not match the expected format 'MEGAHIT-CONCOCT-{sample}.([_[:alnum:]]+).fa'!" 1>&2
+        exit 1
+    fi
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+[[rules]]
+name = "dastool_rename_pre_megahit_comebin"
+when = "config.refine_bins_dastool"
+input = ["{config.out_dir}/GenomeBinning/COMEBin/bins"]
+output = ["intermediates/refinement/renamed_bins/MEGAHIT-COMEBinRefined-{sample}"]
+depends_on = ["comebin_megahit"]
+description = "Rename and decompress the MEGAHIT COMEBin bins for DAS Tool (upstream RENAME_PREDASTOOL)"
+shell = """
+wd=$(pwd)
+outdir=intermediates/refinement/renamed_bins/MEGAHIT-COMEBinRefined-{sample}
+mkdir -p "$outdir"
+for bin in "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}"*.fa.gz; do
+    [ -e "$bin" ] || continue
+    base=$(basename "$bin" .gz)
+    # DAS Tool works on uncompressed fasta, so decompress gzipped bins first
+    if [[ "$base" =~ MEGAHIT-COMEBin-{sample}.([_[:alnum:]]+).fa ]]; then
+        num=${BASH_REMATCH[1]}
+        gzip -cdf "$bin" > "$wd/$outdir/MEGAHIT-COMEBinRefined-{sample}.${num}.fa"
+    else
+        echo "ERROR: the bin filename $base does not match the expected format 'MEGAHIT-COMEBin-{sample}.([_[:alnum:]]+).fa'!" 1>&2
+        exit 1
+    fi
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+[[rules]]
+name = "dastool_rename_pre_megahit_metabinner"
+when = "config.refine_bins_dastool"
+input = ["{config.out_dir}/GenomeBinning/MetaBinner/bins"]
+output = ["intermediates/refinement/renamed_bins/MEGAHIT-MetaBinnerRefined-{sample}"]
+depends_on = ["metabinner_bins_megahit"]
+description = "Rename and decompress the MEGAHIT MetaBinner bins for DAS Tool (upstream RENAME_PREDASTOOL)"
+shell = """
+wd=$(pwd)
+outdir=intermediates/refinement/renamed_bins/MEGAHIT-MetaBinnerRefined-{sample}
+mkdir -p "$outdir"
+for bin in "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{sample}"*.fa.gz; do
+    [ -e "$bin" ] || continue
+    base=$(basename "$bin" .gz)
+    # DAS Tool works on uncompressed fasta, so decompress gzipped bins first
+    if [[ "$base" =~ MEGAHIT-MetaBinner-{sample}.([_[:alnum:]]+).fa ]]; then
+        num=${BASH_REMATCH[1]}
+        gzip -cdf "$bin" > "$wd/$outdir/MEGAHIT-MetaBinnerRefined-{sample}.${num}.fa"
+    else
+        echo "ERROR: the bin filename $base does not match the expected format 'MEGAHIT-MetaBinner-{sample}.([_[:alnum:]]+).fa'!" 1>&2
+        exit 1
+    fi
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+[[rules]]
+name = "dastool_rename_pre_megahit_semibin2"
+when = "config.refine_bins_dastool"
+input = ["{config.out_dir}/GenomeBinning/SemiBin2/bins"]
+output = ["intermediates/refinement/renamed_bins/MEGAHIT-SemiBin2Refined-{sample}"]
+depends_on = ["semibin_megahit"]
+description = "Rename and decompress the MEGAHIT SemiBin2 bins for DAS Tool (upstream RENAME_PREDASTOOL)"
+shell = """
+wd=$(pwd)
+outdir=intermediates/refinement/renamed_bins/MEGAHIT-SemiBin2Refined-{sample}
+mkdir -p "$outdir"
+for bin in "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}"*.fa.gz; do
+    [ -e "$bin" ] || continue
+    base=$(basename "$bin" .gz)
+    # DAS Tool works on uncompressed fasta, so decompress gzipped bins first
+    if [[ "$base" =~ MEGAHIT-SemiBin2-{sample}.([_[:alnum:]]+).fa ]]; then
+        num=${BASH_REMATCH[1]}
+        gzip -cdf "$bin" > "$wd/$outdir/MEGAHIT-SemiBin2Refined-{sample}.${num}.fa"
+    else
+        echo "ERROR: the bin filename $base does not match the expected format 'MEGAHIT-SemiBin2-{sample}.([_[:alnum:]]+).fa'!" 1>&2
+        exit 1
+    fi
+done
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+# DASTOOL_FASTATOCONTIG2BIN (label process_single; -i . -e fa on the renamed
+# bins). Zero-bin groups emit an empty tsv so the declared output holds; the
+# dastool rule skips empty tsvs (upstream channel semantics: binners with no
+# bins never reach DAS Tool).
+[[rules]]
+name = "dastool_fastatocontig2bin_spades_metabat2"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/renamed_bins/SPAdes-MetaBAT2Refined-{sample}"]
+output = ["intermediates/refinement/contig2bin/SPAdes-MetaBAT2-{sample}_contiglist.tsv"]
+depends_on = ["dastool_rename_pre_spades_metabat2"]
+description = "Contig-to-bin table for the SPAdes MetaBAT2 refined bins (upstream DASTOOL_FASTATOCONTIG2BIN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/contig2bin
+mkdir -p .tmp/dastool_f2c2b_spades_metabat2_{sample} && cd .tmp/dastool_f2c2b_spades_metabat2_{sample}
+for f in "$wd/intermediates/refinement/renamed_bins/SPAdes-MetaBAT2Refined-{sample}"/*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa >/dev/null 2>&1; then
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/refinement/contig2bin/SPAdes-MetaBAT2-{sample}_contiglist.tsv"
+else
+    touch "$wd/intermediates/refinement/contig2bin/SPAdes-MetaBAT2-{sample}_contiglist.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_f2c2b_spades_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "dastool_fastatocontig2bin_spades_maxbin2"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/renamed_bins/SPAdes-MaxBin2Refined-{sample}"]
+output = ["intermediates/refinement/contig2bin/SPAdes-MaxBin2-{sample}_contiglist.tsv"]
+depends_on = ["dastool_rename_pre_spades_maxbin2"]
+description = "Contig-to-bin table for the SPAdes MaxBin2 refined bins (upstream DASTOOL_FASTATOCONTIG2BIN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/contig2bin
+mkdir -p .tmp/dastool_f2c2b_spades_maxbin2_{sample} && cd .tmp/dastool_f2c2b_spades_maxbin2_{sample}
+for f in "$wd/intermediates/refinement/renamed_bins/SPAdes-MaxBin2Refined-{sample}"/*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa >/dev/null 2>&1; then
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/refinement/contig2bin/SPAdes-MaxBin2-{sample}_contiglist.tsv"
+else
+    touch "$wd/intermediates/refinement/contig2bin/SPAdes-MaxBin2-{sample}_contiglist.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_f2c2b_spades_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "dastool_fastatocontig2bin_spades_concoct"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/renamed_bins/SPAdes-CONCOCTRefined-{sample}"]
+output = ["intermediates/refinement/contig2bin/SPAdes-CONCOCT-{sample}_contiglist.tsv"]
+depends_on = ["dastool_rename_pre_spades_concoct"]
+description = "Contig-to-bin table for the SPAdes CONCOCT refined bins (upstream DASTOOL_FASTATOCONTIG2BIN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/contig2bin
+mkdir -p .tmp/dastool_f2c2b_spades_concoct_{sample} && cd .tmp/dastool_f2c2b_spades_concoct_{sample}
+for f in "$wd/intermediates/refinement/renamed_bins/SPAdes-CONCOCTRefined-{sample}"/*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa >/dev/null 2>&1; then
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/refinement/contig2bin/SPAdes-CONCOCT-{sample}_contiglist.tsv"
+else
+    touch "$wd/intermediates/refinement/contig2bin/SPAdes-CONCOCT-{sample}_contiglist.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_f2c2b_spades_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "dastool_fastatocontig2bin_spades_comebin"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/renamed_bins/SPAdes-COMEBinRefined-{sample}"]
+output = ["intermediates/refinement/contig2bin/SPAdes-COMEBin-{sample}_contiglist.tsv"]
+depends_on = ["dastool_rename_pre_spades_comebin"]
+description = "Contig-to-bin table for the SPAdes COMEBin refined bins (upstream DASTOOL_FASTATOCONTIG2BIN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/contig2bin
+mkdir -p .tmp/dastool_f2c2b_spades_comebin_{sample} && cd .tmp/dastool_f2c2b_spades_comebin_{sample}
+for f in "$wd/intermediates/refinement/renamed_bins/SPAdes-COMEBinRefined-{sample}"/*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa >/dev/null 2>&1; then
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/refinement/contig2bin/SPAdes-COMEBin-{sample}_contiglist.tsv"
+else
+    touch "$wd/intermediates/refinement/contig2bin/SPAdes-COMEBin-{sample}_contiglist.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_f2c2b_spades_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "dastool_fastatocontig2bin_spades_metabinner"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/renamed_bins/SPAdes-MetaBinnerRefined-{sample}"]
+output = ["intermediates/refinement/contig2bin/SPAdes-MetaBinner-{sample}_contiglist.tsv"]
+depends_on = ["dastool_rename_pre_spades_metabinner"]
+description = "Contig-to-bin table for the SPAdes MetaBinner refined bins (upstream DASTOOL_FASTATOCONTIG2BIN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/contig2bin
+mkdir -p .tmp/dastool_f2c2b_spades_metabinner_{sample} && cd .tmp/dastool_f2c2b_spades_metabinner_{sample}
+for f in "$wd/intermediates/refinement/renamed_bins/SPAdes-MetaBinnerRefined-{sample}"/*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa >/dev/null 2>&1; then
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/refinement/contig2bin/SPAdes-MetaBinner-{sample}_contiglist.tsv"
+else
+    touch "$wd/intermediates/refinement/contig2bin/SPAdes-MetaBinner-{sample}_contiglist.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_f2c2b_spades_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "dastool_fastatocontig2bin_spades_semibin2"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/renamed_bins/SPAdes-SemiBin2Refined-{sample}"]
+output = ["intermediates/refinement/contig2bin/SPAdes-SemiBin2-{sample}_contiglist.tsv"]
+depends_on = ["dastool_rename_pre_spades_semibin2"]
+description = "Contig-to-bin table for the SPAdes SemiBin2 refined bins (upstream DASTOOL_FASTATOCONTIG2BIN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/contig2bin
+mkdir -p .tmp/dastool_f2c2b_spades_semibin2_{sample} && cd .tmp/dastool_f2c2b_spades_semibin2_{sample}
+for f in "$wd/intermediates/refinement/renamed_bins/SPAdes-SemiBin2Refined-{sample}"/*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa >/dev/null 2>&1; then
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/refinement/contig2bin/SPAdes-SemiBin2-{sample}_contiglist.tsv"
+else
+    touch "$wd/intermediates/refinement/contig2bin/SPAdes-SemiBin2-{sample}_contiglist.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_f2c2b_spades_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "dastool_fastatocontig2bin_megahit_metabat2"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/renamed_bins/MEGAHIT-MetaBAT2Refined-{sample}"]
+output = ["intermediates/refinement/contig2bin/MEGAHIT-MetaBAT2-{sample}_contiglist.tsv"]
+depends_on = ["dastool_rename_pre_megahit_metabat2"]
+description = "Contig-to-bin table for the MEGAHIT MetaBAT2 refined bins (upstream DASTOOL_FASTATOCONTIG2BIN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/contig2bin
+mkdir -p .tmp/dastool_f2c2b_megahit_metabat2_{sample} && cd .tmp/dastool_f2c2b_megahit_metabat2_{sample}
+for f in "$wd/intermediates/refinement/renamed_bins/MEGAHIT-MetaBAT2Refined-{sample}"/*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa >/dev/null 2>&1; then
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/refinement/contig2bin/MEGAHIT-MetaBAT2-{sample}_contiglist.tsv"
+else
+    touch "$wd/intermediates/refinement/contig2bin/MEGAHIT-MetaBAT2-{sample}_contiglist.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_f2c2b_megahit_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "dastool_fastatocontig2bin_megahit_maxbin2"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/renamed_bins/MEGAHIT-MaxBin2Refined-{sample}"]
+output = ["intermediates/refinement/contig2bin/MEGAHIT-MaxBin2-{sample}_contiglist.tsv"]
+depends_on = ["dastool_rename_pre_megahit_maxbin2"]
+description = "Contig-to-bin table for the MEGAHIT MaxBin2 refined bins (upstream DASTOOL_FASTATOCONTIG2BIN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/contig2bin
+mkdir -p .tmp/dastool_f2c2b_megahit_maxbin2_{sample} && cd .tmp/dastool_f2c2b_megahit_maxbin2_{sample}
+for f in "$wd/intermediates/refinement/renamed_bins/MEGAHIT-MaxBin2Refined-{sample}"/*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa >/dev/null 2>&1; then
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/refinement/contig2bin/MEGAHIT-MaxBin2-{sample}_contiglist.tsv"
+else
+    touch "$wd/intermediates/refinement/contig2bin/MEGAHIT-MaxBin2-{sample}_contiglist.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_f2c2b_megahit_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "dastool_fastatocontig2bin_megahit_concoct"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/renamed_bins/MEGAHIT-CONCOCTRefined-{sample}"]
+output = ["intermediates/refinement/contig2bin/MEGAHIT-CONCOCT-{sample}_contiglist.tsv"]
+depends_on = ["dastool_rename_pre_megahit_concoct"]
+description = "Contig-to-bin table for the MEGAHIT CONCOCT refined bins (upstream DASTOOL_FASTATOCONTIG2BIN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/contig2bin
+mkdir -p .tmp/dastool_f2c2b_megahit_concoct_{sample} && cd .tmp/dastool_f2c2b_megahit_concoct_{sample}
+for f in "$wd/intermediates/refinement/renamed_bins/MEGAHIT-CONCOCTRefined-{sample}"/*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa >/dev/null 2>&1; then
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/refinement/contig2bin/MEGAHIT-CONCOCT-{sample}_contiglist.tsv"
+else
+    touch "$wd/intermediates/refinement/contig2bin/MEGAHIT-CONCOCT-{sample}_contiglist.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_f2c2b_megahit_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "dastool_fastatocontig2bin_megahit_comebin"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/renamed_bins/MEGAHIT-COMEBinRefined-{sample}"]
+output = ["intermediates/refinement/contig2bin/MEGAHIT-COMEBin-{sample}_contiglist.tsv"]
+depends_on = ["dastool_rename_pre_megahit_comebin"]
+description = "Contig-to-bin table for the MEGAHIT COMEBin refined bins (upstream DASTOOL_FASTATOCONTIG2BIN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/contig2bin
+mkdir -p .tmp/dastool_f2c2b_megahit_comebin_{sample} && cd .tmp/dastool_f2c2b_megahit_comebin_{sample}
+for f in "$wd/intermediates/refinement/renamed_bins/MEGAHIT-COMEBinRefined-{sample}"/*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa >/dev/null 2>&1; then
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/refinement/contig2bin/MEGAHIT-COMEBin-{sample}_contiglist.tsv"
+else
+    touch "$wd/intermediates/refinement/contig2bin/MEGAHIT-COMEBin-{sample}_contiglist.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_f2c2b_megahit_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "dastool_fastatocontig2bin_megahit_metabinner"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/renamed_bins/MEGAHIT-MetaBinnerRefined-{sample}"]
+output = ["intermediates/refinement/contig2bin/MEGAHIT-MetaBinner-{sample}_contiglist.tsv"]
+depends_on = ["dastool_rename_pre_megahit_metabinner"]
+description = "Contig-to-bin table for the MEGAHIT MetaBinner refined bins (upstream DASTOOL_FASTATOCONTIG2BIN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/contig2bin
+mkdir -p .tmp/dastool_f2c2b_megahit_metabinner_{sample} && cd .tmp/dastool_f2c2b_megahit_metabinner_{sample}
+for f in "$wd/intermediates/refinement/renamed_bins/MEGAHIT-MetaBinnerRefined-{sample}"/*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa >/dev/null 2>&1; then
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/refinement/contig2bin/MEGAHIT-MetaBinner-{sample}_contiglist.tsv"
+else
+    touch "$wd/intermediates/refinement/contig2bin/MEGAHIT-MetaBinner-{sample}_contiglist.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_f2c2b_megahit_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "dastool_fastatocontig2bin_megahit_semibin2"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/renamed_bins/MEGAHIT-SemiBin2Refined-{sample}"]
+output = ["intermediates/refinement/contig2bin/MEGAHIT-SemiBin2-{sample}_contiglist.tsv"]
+depends_on = ["dastool_rename_pre_megahit_semibin2"]
+description = "Contig-to-bin table for the MEGAHIT SemiBin2 refined bins (upstream DASTOOL_FASTATOCONTIG2BIN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/contig2bin
+mkdir -p .tmp/dastool_f2c2b_megahit_semibin2_{sample} && cd .tmp/dastool_f2c2b_megahit_semibin2_{sample}
+for f in "$wd/intermediates/refinement/renamed_bins/MEGAHIT-SemiBin2Refined-{sample}"/*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa >/dev/null 2>&1; then
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/refinement/contig2bin/MEGAHIT-SemiBin2-{sample}_contiglist.tsv"
+else
+    touch "$wd/intermediates/refinement/contig2bin/MEGAHIT-SemiBin2-{sample}_contiglist.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_f2c2b_megahit_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+# DASTOOL_DASTOOL (label process_medium; one per assembler). The six
+# contiglist tables are comma-joined; empty tables are dropped (upstream
+# channel semantics). The assembly contigs are decompressed first (module
+# behavior). Auxiliary tables are published flat under
+# results/GenomeBinning/DASTool/ (upstream publishDir pattern
+# '*.{tsv,log,eval,seqlength}'); the *_DASTool_bins dir stays in
+# intermediates for RENAME_POSTDASTOOL.
+[[rules]]
+name = "dastool_dastool_spades"
+when = "config.refine_bins_dastool"
+input = [
+    "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa.gz",
+    "intermediates/refinement/contig2bin/SPAdes-MetaBAT2-{sample}_contiglist.tsv",
+    "intermediates/refinement/contig2bin/SPAdes-MaxBin2-{sample}_contiglist.tsv",
+    "intermediates/refinement/contig2bin/SPAdes-CONCOCT-{sample}_contiglist.tsv",
+    "intermediates/refinement/contig2bin/SPAdes-COMEBin-{sample}_contiglist.tsv",
+    "intermediates/refinement/contig2bin/SPAdes-MetaBinner-{sample}_contiglist.tsv",
+    "intermediates/refinement/contig2bin/SPAdes-SemiBin2-{sample}_contiglist.tsv",
+]
+output = [
+    "intermediates/refinement/dastool/SPAdes-DASTool-{sample}_DASTool_bins",
+    "{config.out_dir}/GenomeBinning/DASTool",
+]
+depends_on = [
+    "dastool_fastatocontig2bin_spades_metabat2",
+    "dastool_fastatocontig2bin_spades_maxbin2",
+    "dastool_fastatocontig2bin_spades_concoct",
+    "dastool_fastatocontig2bin_spades_comebin",
+    "dastool_fastatocontig2bin_spades_metabinner",
+    "dastool_fastatocontig2bin_spades_semibin2",
+]
+description = "Refine the SPAdes bins with DAS Tool (upstream DASTOOL_DASTOOL)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/dastool {config.out_dir}/GenomeBinning/DASTool
+mkdir -p .tmp/dastool_spades_{sample} && cd .tmp/dastool_spades_{sample}
+# decompress the assembly contigs (module behavior: clean_contigs = - .gz)
+cp "$wd/intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa.gz" .
+gunzip -q -f SPAdes-{sample}.scaffolds.fa.gz
+# comma-joined contig2bin tables, skipping empty groups
+tsvs=""
+for t in "$wd"/intermediates/refinement/contig2bin/SPAdes-*-{sample}_contiglist.tsv; do
+    [ -s "$t" ] || continue
+    ln -sf "$t" .
+    tsvs="${tsvs},$(basename "$t")"
+done
+tsvs=${tsvs#,}
+if [ -n "$tsvs" ]; then
+    DAS_Tool \\
+        --write_bins \\
+        --write_unbinned \\
+        --write_bin_evals \\
+        --score_threshold {config.refine_bins_dastool_threshold} \\
+        -t {threads} \\
+        -i "$tsvs" \\
+        -c SPAdes-{sample}.scaffolds.fa \\
+        -o SPAdes-DASTool-{sample}
+    [ $? -eq 0 ] || { echo "DAS_Tool failed for SPAdes-{sample}" 1>&2; exit 1; }
+else
+    touch SPAdes-DASTool-{sample}_DASTool.log
+    mkdir -p SPAdes-DASTool-{sample}_DASTool_bins
+fi
+mv SPAdes-DASTool-{sample}_DASTool_bins "$wd/intermediates/refinement/dastool/"
+# publish the auxiliary tables flat (upstream publishDir '*.{tsv,log,eval,seqlength}')
+if [ -f SPAdes-DASTool-{sample}_DASTool.log ]; then
+    mv SPAdes-DASTool-{sample}_DASTool.log "$wd/{config.out_dir}/GenomeBinning/DASTool/"
+fi
+if [ -f SPAdes-DASTool-{sample}_DASTool_summary.tsv ]; then
+    mv SPAdes-DASTool-{sample}_DASTool_summary.tsv "$wd/{config.out_dir}/GenomeBinning/DASTool/"
+fi
+if [ -f SPAdes-DASTool-{sample}_DASTool_contig2bin.tsv ]; then
+    mv SPAdes-DASTool-{sample}_DASTool_contig2bin.tsv "$wd/{config.out_dir}/GenomeBinning/DASTool/"
+fi
+if [ -f SPAdes-DASTool-{sample}_allBins.eval ]; then
+    mv SPAdes-DASTool-{sample}_allBins.eval "$wd/{config.out_dir}/GenomeBinning/DASTool/"
+fi
+if [ -f SPAdes-DASTool-{sample}.seqlength ]; then
+    mv SPAdes-DASTool-{sample}.seqlength "$wd/{config.out_dir}/GenomeBinning/DASTool/"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_spades_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "14G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "dastool_dastool_megahit"
+when = "config.refine_bins_dastool"
+input = [
+    "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa.gz",
+    "intermediates/refinement/contig2bin/MEGAHIT-MetaBAT2-{sample}_contiglist.tsv",
+    "intermediates/refinement/contig2bin/MEGAHIT-MaxBin2-{sample}_contiglist.tsv",
+    "intermediates/refinement/contig2bin/MEGAHIT-CONCOCT-{sample}_contiglist.tsv",
+    "intermediates/refinement/contig2bin/MEGAHIT-COMEBin-{sample}_contiglist.tsv",
+    "intermediates/refinement/contig2bin/MEGAHIT-MetaBinner-{sample}_contiglist.tsv",
+    "intermediates/refinement/contig2bin/MEGAHIT-SemiBin2-{sample}_contiglist.tsv",
+]
+output = [
+    "intermediates/refinement/dastool/MEGAHIT-DASTool-{sample}_DASTool_bins",
+    "{config.out_dir}/GenomeBinning/DASTool",
+]
+depends_on = [
+    "dastool_fastatocontig2bin_megahit_metabat2",
+    "dastool_fastatocontig2bin_megahit_maxbin2",
+    "dastool_fastatocontig2bin_megahit_concoct",
+    "dastool_fastatocontig2bin_megahit_comebin",
+    "dastool_fastatocontig2bin_megahit_metabinner",
+    "dastool_fastatocontig2bin_megahit_semibin2",
+]
+description = "Refine the MEGAHIT bins with DAS Tool (upstream DASTOOL_DASTOOL)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/refinement/dastool {config.out_dir}/GenomeBinning/DASTool
+mkdir -p .tmp/dastool_megahit_{sample} && cd .tmp/dastool_megahit_{sample}
+# decompress the assembly contigs (module behavior: clean_contigs = - .gz)
+cp "$wd/intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa.gz" .
+gunzip -q -f MEGAHIT-{sample}.contigs.fa.gz
+# comma-joined contig2bin tables, skipping empty groups
+tsvs=""
+for t in "$wd"/intermediates/refinement/contig2bin/MEGAHIT-*-{sample}_contiglist.tsv; do
+    [ -s "$t" ] || continue
+    ln -sf "$t" .
+    tsvs="${tsvs},$(basename "$t")"
+done
+tsvs=${tsvs#,}
+if [ -n "$tsvs" ]; then
+    DAS_Tool \\
+        --write_bins \\
+        --write_unbinned \\
+        --write_bin_evals \\
+        --score_threshold {config.refine_bins_dastool_threshold} \\
+        -t {threads} \\
+        -i "$tsvs" \\
+        -c MEGAHIT-{sample}.contigs.fa \\
+        -o MEGAHIT-DASTool-{sample}
+    [ $? -eq 0 ] || { echo "DAS_Tool failed for MEGAHIT-{sample}" 1>&2; exit 1; }
+else
+    touch MEGAHIT-DASTool-{sample}_DASTool.log
+    mkdir -p MEGAHIT-DASTool-{sample}_DASTool_bins
+fi
+mv MEGAHIT-DASTool-{sample}_DASTool_bins "$wd/intermediates/refinement/dastool/"
+# publish the auxiliary tables flat (upstream publishDir '*.{tsv,log,eval,seqlength}')
+if [ -f MEGAHIT-DASTool-{sample}_DASTool.log ]; then
+    mv MEGAHIT-DASTool-{sample}_DASTool.log "$wd/{config.out_dir}/GenomeBinning/DASTool/"
+fi
+if [ -f MEGAHIT-DASTool-{sample}_DASTool_summary.tsv ]; then
+    mv MEGAHIT-DASTool-{sample}_DASTool_summary.tsv "$wd/{config.out_dir}/GenomeBinning/DASTool/"
+fi
+if [ -f MEGAHIT-DASTool-{sample}_DASTool_contig2bin.tsv ]; then
+    mv MEGAHIT-DASTool-{sample}_DASTool_contig2bin.tsv "$wd/{config.out_dir}/GenomeBinning/DASTool/"
+fi
+if [ -f MEGAHIT-DASTool-{sample}_allBins.eval ]; then
+    mv MEGAHIT-DASTool-{sample}_allBins.eval "$wd/{config.out_dir}/GenomeBinning/DASTool/"
+fi
+if [ -f MEGAHIT-DASTool-{sample}.seqlength ]; then
+    mv MEGAHIT-DASTool-{sample}.seqlength "$wd/{config.out_dir}/GenomeBinning/DASTool/"
+fi
+cd "$wd"
+rm -rf .tmp/dastool_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "14G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+# RENAME_POSTDASTOOL (label process_single; one per assembler). The unbinned
+# file is renamed to {assembler}-DASToolUnbinned-{sample}.fa and all bins are
+# re-compressed; the refined bins and the unbinned file are published to
+# results/GenomeBinning/DASTool/{bins,unbinned} (upstream publishDir).
+[[rules]]
+name = "dastool_rename_post_spades"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/dastool/SPAdes-DASTool-{sample}_DASTool_bins"]
+output = [
+    "{config.out_dir}/GenomeBinning/DASTool/bins",
+    "{config.out_dir}/GenomeBinning/DASTool/unbinned",
+]
+depends_on = ["dastool_dastool_spades"]
+description = "Rename the unbinned file and re-compress the SPAdes DAS Tool bins (upstream RENAME_POSTDASTOOL)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/DASTool/bins {config.out_dir}/GenomeBinning/DASTool/unbinned
+mkdir -p .tmp/dastool_rename_post_spades_{sample} && cd .tmp/dastool_rename_post_spades_{sample}
+for f in "$wd/intermediates/refinement/dastool/SPAdes-DASTool-{sample}_DASTool_bins/"*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -f unbinned.fa ]; then
+    mv unbinned.fa SPAdes-DASToolUnbinned-{sample}.fa
+fi
+# re-compress bins to match the gzipped bins used across the rest of the pipeline
+if ls *.fa >/dev/null 2>&1; then
+    gzip -f *.fa
+fi
+# the refined bins keep their original binner names ({assembler}-{binner}Refined-...)
+for f in SPAdes-*Refined-{sample}.*.fa.gz; do
+    [ -e "$f" ] || continue
+    mv "$f" "$wd/{config.out_dir}/GenomeBinning/DASTool/bins/"
+done
+for f in SPAdes-DASToolUnbinned-{sample}.fa.gz; do
+    [ -e "$f" ] || continue
+    mv "$f" "$wd/{config.out_dir}/GenomeBinning/DASTool/unbinned/"
+done
+cd "$wd"
+rm -rf .tmp/dastool_rename_post_spades_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"
+
+[[rules]]
+name = "dastool_rename_post_megahit"
+when = "config.refine_bins_dastool"
+input = ["intermediates/refinement/dastool/MEGAHIT-DASTool-{sample}_DASTool_bins"]
+output = [
+    "{config.out_dir}/GenomeBinning/DASTool/bins",
+    "{config.out_dir}/GenomeBinning/DASTool/unbinned",
+]
+depends_on = ["dastool_dastool_megahit"]
+description = "Rename the unbinned file and re-compress the MEGAHIT DAS Tool bins (upstream RENAME_POSTDASTOOL)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/DASTool/bins {config.out_dir}/GenomeBinning/DASTool/unbinned
+mkdir -p .tmp/dastool_rename_post_megahit_{sample} && cd .tmp/dastool_rename_post_megahit_{sample}
+for f in "$wd/intermediates/refinement/dastool/MEGAHIT-DASTool-{sample}_DASTool_bins/"*.fa; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -f unbinned.fa ]; then
+    mv unbinned.fa MEGAHIT-DASToolUnbinned-{sample}.fa
+fi
+# re-compress bins to match the gzipped bins used across the rest of the pipeline
+if ls *.fa >/dev/null 2>&1; then
+    gzip -f *.fa
+fi
+# the refined bins keep their original binner names ({assembler}-{binner}Refined-...)
+for f in MEGAHIT-*Refined-{sample}.*.fa.gz; do
+    [ -e "$f" ] || continue
+    mv "$f" "$wd/{config.out_dir}/GenomeBinning/DASTool/bins/"
+done
+for f in MEGAHIT-DASToolUnbinned-{sample}.fa.gz; do
+    [ -e "$f" ] || continue
+    mv "$f" "$wd/{config.out_dir}/GenomeBinning/DASTool/unbinned/"
+done
+cd "$wd"
+rm -rf .tmp/dastool_rename_post_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunzip.yaml"

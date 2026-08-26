@@ -1,0 +1,8 @@
+# Environment for CheckM — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/checkm/lineagewf 1.2.5 module environment (modules/nf-core/checkm/lineagewf/environment.yml); used by the --run_checkm branch. The lineage database (~1.1GB) is downloaded by checkm at first use.
+name: checkm
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::checkm-genome=1.2.5

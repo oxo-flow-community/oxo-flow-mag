@@ -1,0 +1,9 @@
+# Environment for domain_classification.R — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream local tiara_classify module environment (modules/local/tiara_classify/environment.yml); used by the --bin_domain_classification branch.
+name: tiara_classify
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - conda-forge::r-tidyverse=1.3.1
+  - conda-forge::r-optparse=1.7.3

@@ -1,0 +1,1691 @@
+[workflow]
+name = "08_domain"
+description = "nf-core/mag 5.5.0 tiara fragment (--bin_domain_classification; off by default)"
+# ---------------------------------------------------------------------------
+# DOMAIN CLASSIFICATION (nf-core/mag 5.5.0, gated on
+# config.bin_domain_classification): TIARA_TIARA classifies the contigs of
+# each assembly, DASTOOL_FASTATOCONTIG2BIN builds the contig-to-bin tables
+# for the bins and the unbinned chunks (upstream SPLIT_FASTA unbins only for
+# MetaBAT2/MaxBin2/MetaBinner), TIARA_CLASSIFY splits each bin set into the
+# six domain dirs with bin/domain_classification.R, and CONCAT_TIARA_TSV
+# fuses all classification tables into tiara_summary.tsv. Everything is
+# when-gated on config.bin_domain_classification (upstream
+# params.bin_domain_classification=false), so the default plan is untouched.
+# The domain-classified bins themselves stay as work intermediates (upstream
+# publishes nothing for TIARA_CLASSIFY either; the classification tables are
+# the published outputs).
+# ---------------------------------------------------------------------------
+
+# TIARA_TIARA (label process_medium; upstream ext.args
+# "--min_len ${params.tiara_min_length} --probabilities", prefix
+# {assembler}-{id}.tiara -> {assembler}-{sample}.tiara.txt)
+[[rules]]
+name = "tiara_tiara_spades"
+when = "config.bin_domain_classification"
+input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa.gz"]
+output = ["{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt"]
+depends_on = ["spades"]
+description = "Per-contig domain classification of the SPAdes assembly (upstream TIARA_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/Tiara
+mkdir -p .tmp/tiara_spades_{sample} && cd .tmp/tiara_spades_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa.gz
+tiara \\
+    -i assembly.fa.gz \\
+    -o SPAdes-{sample}.tiara.txt \\
+    --threads {threads} \\
+    --min_len {config.tiara_min_length} \\
+    --probabilities
+[ $? -eq 0 ] || { echo "tiara failed for SPAdes-{sample}" 1>&2; exit 1; }
+mv SPAdes-{sample}.tiara.txt "$wd/{config.out_dir}/Taxonomy/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_spades_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "14G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara.yaml"
+
+[[rules]]
+name = "tiara_tiara_megahit"
+when = "config.bin_domain_classification"
+input = ["intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa.gz"]
+output = ["{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt"]
+depends_on = ["megahit"]
+description = "Per-contig domain classification of the MEGAHIT assembly (upstream TIARA_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/Tiara
+mkdir -p .tmp/tiara_megahit_{sample} && cd .tmp/tiara_megahit_{sample}
+ln -sf "$wd/{input[0]}" assembly.fa.gz
+tiara \\
+    -i assembly.fa.gz \\
+    -o MEGAHIT-{sample}.tiara.txt \\
+    --threads {threads} \\
+    --min_len {config.tiara_min_length} \\
+    --probabilities
+[ $? -eq 0 ] || { echo "tiara failed for MEGAHIT-{sample}" 1>&2; exit 1; }
+mv MEGAHIT-{sample}.tiara.txt "$wd/{config.out_dir}/Taxonomy/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "14G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara.yaml"
+
+# DASTOOL_FASTATOCONTIG2BIN_TIARA (label process_single; upstream prefix
+# {assembler}-{binner}-{id}). One rule per (assembler, binner, bins|unbins).
+# Zero-bin groups emit an empty tsv; the classify rules skip empty tables.
+[[rules]]
+name = "fastatocontig2bin_tiara_spades_metabat2_bins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/MetaBAT2/bins"]
+output = ["intermediates/domain/contig2bin/SPAdes-MetaBAT2-bins-{sample}.tsv"]
+depends_on = ["metabat2_spades"]
+description = "Contig-to-bin table of the SPAdes MetaBAT2 bins for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_spades_metabat2_bins_{sample} && cd .tmp/f2c2b_tiara_spades_metabat2_bins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/SPAdes-MetaBAT2-bins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/SPAdes-MetaBAT2-bins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_spades_metabat2_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_spades_maxbin2_bins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/MaxBin2/bins"]
+output = ["intermediates/domain/contig2bin/SPAdes-MaxBin2-bins-{sample}.tsv"]
+depends_on = ["maxbin2_spades"]
+description = "Contig-to-bin table of the SPAdes MaxBin2 bins for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_spades_maxbin2_bins_{sample} && cd .tmp/f2c2b_tiara_spades_maxbin2_bins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/SPAdes-MaxBin2-bins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/SPAdes-MaxBin2-bins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_spades_maxbin2_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_spades_concoct_bins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/CONCOCT/bins"]
+output = ["intermediates/domain/contig2bin/SPAdes-CONCOCT-bins-{sample}.tsv"]
+depends_on = ["concoct_extract_spades"]
+description = "Contig-to-bin table of the SPAdes CONCOCT bins for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_spades_concoct_bins_{sample} && cd .tmp/f2c2b_tiara_spades_concoct_bins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/SPAdes-CONCOCT-bins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/SPAdes-CONCOCT-bins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_spades_concoct_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_spades_comebin_bins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/COMEBin/bins"]
+output = ["intermediates/domain/contig2bin/SPAdes-COMEBin-bins-{sample}.tsv"]
+depends_on = ["comebin_spades"]
+description = "Contig-to-bin table of the SPAdes COMEBin bins for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_spades_comebin_bins_{sample} && cd .tmp/f2c2b_tiara_spades_comebin_bins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/SPAdes-COMEBin-bins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/SPAdes-COMEBin-bins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_spades_comebin_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_spades_metabinner_bins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/MetaBinner/bins"]
+output = ["intermediates/domain/contig2bin/SPAdes-MetaBinner-bins-{sample}.tsv"]
+depends_on = ["metabinner_bins_spades"]
+description = "Contig-to-bin table of the SPAdes MetaBinner bins for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_spades_metabinner_bins_{sample} && cd .tmp/f2c2b_tiara_spades_metabinner_bins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/SPAdes-MetaBinner-bins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/SPAdes-MetaBinner-bins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_spades_metabinner_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_spades_semibin2_bins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/SemiBin2/bins"]
+output = ["intermediates/domain/contig2bin/SPAdes-SemiBin2-bins-{sample}.tsv"]
+depends_on = ["semibin_spades"]
+description = "Contig-to-bin table of the SPAdes SemiBin2 bins for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_spades_semibin2_bins_{sample} && cd .tmp/f2c2b_tiara_spades_semibin2_bins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/SPAdes-SemiBin2-bins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/SPAdes-SemiBin2-bins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_spades_semibin2_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_megahit_metabat2_bins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/MetaBAT2/bins"]
+output = ["intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-bins-{sample}.tsv"]
+depends_on = ["metabat2_megahit"]
+description = "Contig-to-bin table of the MEGAHIT MetaBAT2 bins for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_megahit_metabat2_bins_{sample} && cd .tmp/f2c2b_tiara_megahit_metabat2_bins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-bins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-bins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_megahit_metabat2_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_megahit_maxbin2_bins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/MaxBin2/bins"]
+output = ["intermediates/domain/contig2bin/MEGAHIT-MaxBin2-bins-{sample}.tsv"]
+depends_on = ["maxbin2_megahit"]
+description = "Contig-to-bin table of the MEGAHIT MaxBin2 bins for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_megahit_maxbin2_bins_{sample} && cd .tmp/f2c2b_tiara_megahit_maxbin2_bins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/MEGAHIT-MaxBin2-bins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/MEGAHIT-MaxBin2-bins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_megahit_maxbin2_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_megahit_concoct_bins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/CONCOCT/bins"]
+output = ["intermediates/domain/contig2bin/MEGAHIT-CONCOCT-bins-{sample}.tsv"]
+depends_on = ["concoct_extract_megahit"]
+description = "Contig-to-bin table of the MEGAHIT CONCOCT bins for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_megahit_concoct_bins_{sample} && cd .tmp/f2c2b_tiara_megahit_concoct_bins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/MEGAHIT-CONCOCT-bins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/MEGAHIT-CONCOCT-bins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_megahit_concoct_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_megahit_comebin_bins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/COMEBin/bins"]
+output = ["intermediates/domain/contig2bin/MEGAHIT-COMEBin-bins-{sample}.tsv"]
+depends_on = ["comebin_megahit"]
+description = "Contig-to-bin table of the MEGAHIT COMEBin bins for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_megahit_comebin_bins_{sample} && cd .tmp/f2c2b_tiara_megahit_comebin_bins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/MEGAHIT-COMEBin-bins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/MEGAHIT-COMEBin-bins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_megahit_comebin_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_megahit_metabinner_bins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/MetaBinner/bins"]
+output = ["intermediates/domain/contig2bin/MEGAHIT-MetaBinner-bins-{sample}.tsv"]
+depends_on = ["metabinner_bins_megahit"]
+description = "Contig-to-bin table of the MEGAHIT MetaBinner bins for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_megahit_metabinner_bins_{sample} && cd .tmp/f2c2b_tiara_megahit_metabinner_bins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBinner-bins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBinner-bins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_megahit_metabinner_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_megahit_semibin2_bins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/SemiBin2/bins"]
+output = ["intermediates/domain/contig2bin/MEGAHIT-SemiBin2-bins-{sample}.tsv"]
+depends_on = ["semibin_megahit"]
+description = "Contig-to-bin table of the MEGAHIT SemiBin2 bins for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_megahit_semibin2_bins_{sample} && cd .tmp/f2c2b_tiara_megahit_semibin2_bins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/MEGAHIT-SemiBin2-bins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/MEGAHIT-SemiBin2-bins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_megahit_semibin2_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+# unbinned chunks (upstream SPLIT_FASTA.out.unbinned only feeds
+# MetaBAT2/MaxBin2/MetaBinner; CONCOCT/COMEBin/SemiBin2 have no chunk dir in
+# the port, so their rules are omitted entirely — the upstream channel for
+# them is empty too)
+[[rules]]
+name = "fastatocontig2bin_tiara_spades_metabat2_unbins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/MetaBAT2/unbinned"]
+output = ["intermediates/domain/contig2bin/SPAdes-MetaBAT2-unbins-{sample}.tsv"]
+depends_on = ["split_fasta_metabat2_spades"]
+description = "Contig-to-bin table of the SPAdes MetaBAT2 unbinned chunks for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_spades_metabat2_unbins_{sample} && cd .tmp/f2c2b_tiara_spades_metabat2_unbins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/SPAdes-MetaBAT2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/SPAdes-MetaBAT2-unbins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/SPAdes-MetaBAT2-unbins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_spades_metabat2_unbins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_spades_maxbin2_unbins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/MaxBin2/unbinned"]
+output = ["intermediates/domain/contig2bin/SPAdes-MaxBin2-unbins-{sample}.tsv"]
+depends_on = ["split_fasta_maxbin2_spades"]
+description = "Contig-to-bin table of the SPAdes MaxBin2 unbinned chunks for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_spades_maxbin2_unbins_{sample} && cd .tmp/f2c2b_tiara_spades_maxbin2_unbins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/SPAdes-MaxBin2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/SPAdes-MaxBin2-unbins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/SPAdes-MaxBin2-unbins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_spades_maxbin2_unbins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_spades_metabinner_unbins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/MetaBinner/unbinned"]
+output = ["intermediates/domain/contig2bin/SPAdes-MetaBinner-unbins-{sample}.tsv"]
+depends_on = ["split_fasta_metabinner_spades"]
+description = "Contig-to-bin table of the SPAdes MetaBinner unbinned chunks for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_spades_metabinner_unbins_{sample} && cd .tmp/f2c2b_tiara_spades_metabinner_unbins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/SPAdes-MetaBinner-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/SPAdes-MetaBinner-unbins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/SPAdes-MetaBinner-unbins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_spades_metabinner_unbins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_megahit_metabat2_unbins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/MetaBAT2/unbinned"]
+output = ["intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-unbins-{sample}.tsv"]
+depends_on = ["split_fasta_metabat2_megahit"]
+description = "Contig-to-bin table of the MEGAHIT MetaBAT2 unbinned chunks for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_megahit_metabat2_unbins_{sample} && cd .tmp/f2c2b_tiara_megahit_metabat2_unbins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/MEGAHIT-MetaBAT2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-unbins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-unbins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_megahit_metabat2_unbins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_megahit_maxbin2_unbins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/MaxBin2/unbinned"]
+output = ["intermediates/domain/contig2bin/MEGAHIT-MaxBin2-unbins-{sample}.tsv"]
+depends_on = ["split_fasta_maxbin2_megahit"]
+description = "Contig-to-bin table of the MEGAHIT MaxBin2 unbinned chunks for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_megahit_maxbin2_unbins_{sample} && cd .tmp/f2c2b_tiara_megahit_maxbin2_unbins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/MEGAHIT-MaxBin2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/MEGAHIT-MaxBin2-unbins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/MEGAHIT-MaxBin2-unbins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_megahit_maxbin2_unbins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+[[rules]]
+name = "fastatocontig2bin_tiara_megahit_metabinner_unbins"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/MetaBinner/unbinned"]
+output = ["intermediates/domain/contig2bin/MEGAHIT-MetaBinner-unbins-{sample}.tsv"]
+depends_on = ["split_fasta_metabinner_megahit"]
+description = "Contig-to-bin table of the MEGAHIT MetaBinner unbinned chunks for domain classification (upstream DASTOOL_FASTATOCONTIG2BIN_TIARA)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/domain/contig2bin
+mkdir -p .tmp/f2c2b_tiara_megahit_metabinner_unbins_{sample} && cd .tmp/f2c2b_tiara_megahit_metabinner_unbins_{sample}
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/MEGAHIT-MetaBinner-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if ls *.fa.gz >/dev/null 2>&1; then
+    gunzip -f *.fa.gz
+    Fasta_to_Contig2Bin.sh -i . -e fa > "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBinner-unbins-{sample}.tsv"
+else
+    touch "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBinner-unbins-{sample}.tsv"
+fi
+cd "$wd"
+rm -rf .tmp/f2c2b_tiara_megahit_metabinner_unbins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/dastool.yaml"
+
+# TIARA_CLASSIFY (label process_single; upstream ext.args
+# --join_prokaryotes, prefix {assembler}-{binner}-{bin}-{id}). The R script
+# is copied verbatim from upstream bin/domain_classification.R. Deviation:
+# the upstream while-loop uses IFS=$"\t" which does not split on tabs in
+# bash; the port uses IFS=$'\t' so the bin->domain copy actually works.
+[[rules]]
+name = "tiara_classify_spades_metabat2_bins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/SPAdes-MetaBAT2-bins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/SPAdes-MetaBAT2-bins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_spades", "fastatocontig2bin_tiara_spades_metabat2_bins"]
+description = "Domain classification of the SPAdes MetaBAT2 bins (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_spades_metabat2_bins_{sample} && cd .tmp/tiara_classify_spades_metabat2_bins_{sample}
+# bins for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-MetaBAT2-bins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/SPAdes-MetaBAT2-bins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix SPAdes-MetaBAT2-bins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-MetaBAT2-bins-{sample}.binclassification.tsv ] || touch SPAdes-MetaBAT2-bins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch SPAdes-MetaBAT2-bins-{sample}.binclassification.tsv
+fi
+mv SPAdes-MetaBAT2-bins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_spades_metabat2_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_spades_maxbin2_bins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/SPAdes-MaxBin2-bins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/SPAdes-MaxBin2-bins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_spades", "fastatocontig2bin_tiara_spades_maxbin2_bins"]
+description = "Domain classification of the SPAdes MaxBin2 bins (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_spades_maxbin2_bins_{sample} && cd .tmp/tiara_classify_spades_maxbin2_bins_{sample}
+# bins for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-MaxBin2-bins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/SPAdes-MaxBin2-bins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix SPAdes-MaxBin2-bins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-MaxBin2-bins-{sample}.binclassification.tsv ] || touch SPAdes-MaxBin2-bins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch SPAdes-MaxBin2-bins-{sample}.binclassification.tsv
+fi
+mv SPAdes-MaxBin2-bins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_spades_maxbin2_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_spades_concoct_bins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/SPAdes-CONCOCT-bins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/SPAdes-CONCOCT-bins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_spades", "fastatocontig2bin_tiara_spades_concoct_bins"]
+description = "Domain classification of the SPAdes CONCOCT bins (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_spades_concoct_bins_{sample} && cd .tmp/tiara_classify_spades_concoct_bins_{sample}
+# bins for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-CONCOCT-bins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/SPAdes-CONCOCT-bins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix SPAdes-CONCOCT-bins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-CONCOCT-bins-{sample}.binclassification.tsv ] || touch SPAdes-CONCOCT-bins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch SPAdes-CONCOCT-bins-{sample}.binclassification.tsv
+fi
+mv SPAdes-CONCOCT-bins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_spades_concoct_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_spades_comebin_bins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/SPAdes-COMEBin-bins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/SPAdes-COMEBin-bins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_spades", "fastatocontig2bin_tiara_spades_comebin_bins"]
+description = "Domain classification of the SPAdes COMEBin bins (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_spades_comebin_bins_{sample} && cd .tmp/tiara_classify_spades_comebin_bins_{sample}
+# bins for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-COMEBin-bins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/SPAdes-COMEBin-bins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix SPAdes-COMEBin-bins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-COMEBin-bins-{sample}.binclassification.tsv ] || touch SPAdes-COMEBin-bins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch SPAdes-COMEBin-bins-{sample}.binclassification.tsv
+fi
+mv SPAdes-COMEBin-bins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_spades_comebin_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_spades_metabinner_bins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/SPAdes-MetaBinner-bins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/SPAdes-MetaBinner-bins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_spades", "fastatocontig2bin_tiara_spades_metabinner_bins"]
+description = "Domain classification of the SPAdes MetaBinner bins (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_spades_metabinner_bins_{sample} && cd .tmp/tiara_classify_spades_metabinner_bins_{sample}
+# bins for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-MetaBinner-bins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/SPAdes-MetaBinner-bins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix SPAdes-MetaBinner-bins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-MetaBinner-bins-{sample}.binclassification.tsv ] || touch SPAdes-MetaBinner-bins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch SPAdes-MetaBinner-bins-{sample}.binclassification.tsv
+fi
+mv SPAdes-MetaBinner-bins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_spades_metabinner_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_spades_semibin2_bins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/SPAdes-SemiBin2-bins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/SPAdes-SemiBin2-bins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_spades", "fastatocontig2bin_tiara_spades_semibin2_bins"]
+description = "Domain classification of the SPAdes SemiBin2 bins (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_spades_semibin2_bins_{sample} && cd .tmp/tiara_classify_spades_semibin2_bins_{sample}
+# bins for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-SemiBin2-bins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/SPAdes-SemiBin2-bins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix SPAdes-SemiBin2-bins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-SemiBin2-bins-{sample}.binclassification.tsv ] || touch SPAdes-SemiBin2-bins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch SPAdes-SemiBin2-bins-{sample}.binclassification.tsv
+fi
+mv SPAdes-SemiBin2-bins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_spades_semibin2_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_megahit_metabat2_bins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-bins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/MEGAHIT-MetaBAT2-bins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_megahit", "fastatocontig2bin_tiara_megahit_metabat2_bins"]
+description = "Domain classification of the MEGAHIT MetaBAT2 bins (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_megahit_metabat2_bins_{sample} && cd .tmp/tiara_classify_megahit_metabat2_bins_{sample}
+# bins for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-bins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-bins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix MEGAHIT-MetaBAT2-bins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-MetaBAT2-bins-{sample}.binclassification.tsv ] || touch MEGAHIT-MetaBAT2-bins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch MEGAHIT-MetaBAT2-bins-{sample}.binclassification.tsv
+fi
+mv MEGAHIT-MetaBAT2-bins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_megahit_metabat2_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_megahit_maxbin2_bins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/MEGAHIT-MaxBin2-bins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/MEGAHIT-MaxBin2-bins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_megahit", "fastatocontig2bin_tiara_megahit_maxbin2_bins"]
+description = "Domain classification of the MEGAHIT MaxBin2 bins (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_megahit_maxbin2_bins_{sample} && cd .tmp/tiara_classify_megahit_maxbin2_bins_{sample}
+# bins for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-MaxBin2-bins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/MEGAHIT-MaxBin2-bins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix MEGAHIT-MaxBin2-bins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-MaxBin2-bins-{sample}.binclassification.tsv ] || touch MEGAHIT-MaxBin2-bins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch MEGAHIT-MaxBin2-bins-{sample}.binclassification.tsv
+fi
+mv MEGAHIT-MaxBin2-bins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_megahit_maxbin2_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_megahit_concoct_bins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/MEGAHIT-CONCOCT-bins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/MEGAHIT-CONCOCT-bins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_megahit", "fastatocontig2bin_tiara_megahit_concoct_bins"]
+description = "Domain classification of the MEGAHIT CONCOCT bins (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_megahit_concoct_bins_{sample} && cd .tmp/tiara_classify_megahit_concoct_bins_{sample}
+# bins for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-CONCOCT-bins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/MEGAHIT-CONCOCT-bins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix MEGAHIT-CONCOCT-bins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-CONCOCT-bins-{sample}.binclassification.tsv ] || touch MEGAHIT-CONCOCT-bins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch MEGAHIT-CONCOCT-bins-{sample}.binclassification.tsv
+fi
+mv MEGAHIT-CONCOCT-bins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_megahit_concoct_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_megahit_comebin_bins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/MEGAHIT-COMEBin-bins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/MEGAHIT-COMEBin-bins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_megahit", "fastatocontig2bin_tiara_megahit_comebin_bins"]
+description = "Domain classification of the MEGAHIT COMEBin bins (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_megahit_comebin_bins_{sample} && cd .tmp/tiara_classify_megahit_comebin_bins_{sample}
+# bins for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-COMEBin-bins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/MEGAHIT-COMEBin-bins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix MEGAHIT-COMEBin-bins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-COMEBin-bins-{sample}.binclassification.tsv ] || touch MEGAHIT-COMEBin-bins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch MEGAHIT-COMEBin-bins-{sample}.binclassification.tsv
+fi
+mv MEGAHIT-COMEBin-bins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_megahit_comebin_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_megahit_metabinner_bins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/MEGAHIT-MetaBinner-bins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/MEGAHIT-MetaBinner-bins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_megahit", "fastatocontig2bin_tiara_megahit_metabinner_bins"]
+description = "Domain classification of the MEGAHIT MetaBinner bins (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_megahit_metabinner_bins_{sample} && cd .tmp/tiara_classify_megahit_metabinner_bins_{sample}
+# bins for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBinner-bins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBinner-bins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix MEGAHIT-MetaBinner-bins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-MetaBinner-bins-{sample}.binclassification.tsv ] || touch MEGAHIT-MetaBinner-bins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch MEGAHIT-MetaBinner-bins-{sample}.binclassification.tsv
+fi
+mv MEGAHIT-MetaBinner-bins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_megahit_metabinner_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_megahit_semibin2_bins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/MEGAHIT-SemiBin2-bins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/MEGAHIT-SemiBin2-bins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_megahit", "fastatocontig2bin_tiara_megahit_semibin2_bins"]
+description = "Domain classification of the MEGAHIT SemiBin2 bins (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_megahit_semibin2_bins_{sample} && cd .tmp/tiara_classify_megahit_semibin2_bins_{sample}
+# bins for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-SemiBin2-bins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/MEGAHIT-SemiBin2-bins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix MEGAHIT-SemiBin2-bins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-SemiBin2-bins-{sample}.binclassification.tsv ] || touch MEGAHIT-SemiBin2-bins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch MEGAHIT-SemiBin2-bins-{sample}.binclassification.tsv
+fi
+mv MEGAHIT-SemiBin2-bins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_megahit_semibin2_bins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_spades_metabat2_unbins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/SPAdes-MetaBAT2-unbins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/SPAdes-MetaBAT2-unbins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_spades", "fastatocontig2bin_tiara_spades_metabat2_unbins"]
+description = "Domain classification of the SPAdes MetaBAT2 unbinned chunks (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_spades_metabat2_unbins_{sample} && cd .tmp/tiara_classify_spades_metabat2_unbins_{sample}
+# chunks for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/SPAdes-MetaBAT2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-MetaBAT2-unbins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/SPAdes-MetaBAT2-unbins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix SPAdes-MetaBAT2-unbins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-MetaBAT2-unbins-{sample}.binclassification.tsv ] || touch SPAdes-MetaBAT2-unbins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch SPAdes-MetaBAT2-unbins-{sample}.binclassification.tsv
+fi
+mv SPAdes-MetaBAT2-unbins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_spades_metabat2_unbins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_spades_maxbin2_unbins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/SPAdes-MaxBin2-unbins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/SPAdes-MaxBin2-unbins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_spades", "fastatocontig2bin_tiara_spades_maxbin2_unbins"]
+description = "Domain classification of the SPAdes MaxBin2 unbinned chunks (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_spades_maxbin2_unbins_{sample} && cd .tmp/tiara_classify_spades_maxbin2_unbins_{sample}
+# chunks for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/SPAdes-MaxBin2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-MaxBin2-unbins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/SPAdes-MaxBin2-unbins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix SPAdes-MaxBin2-unbins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-MaxBin2-unbins-{sample}.binclassification.tsv ] || touch SPAdes-MaxBin2-unbins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch SPAdes-MaxBin2-unbins-{sample}.binclassification.tsv
+fi
+mv SPAdes-MaxBin2-unbins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_spades_maxbin2_unbins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_spades_metabinner_unbins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/SPAdes-MetaBinner-unbins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/SPAdes-MetaBinner-unbins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_spades", "fastatocontig2bin_tiara_spades_metabinner_unbins"]
+description = "Domain classification of the SPAdes MetaBinner unbinned chunks (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_spades_metabinner_unbins_{sample} && cd .tmp/tiara_classify_spades_metabinner_unbins_{sample}
+# chunks for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/SPAdes-MetaBinner-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/SPAdes-MetaBinner-unbins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/SPAdes-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/SPAdes-MetaBinner-unbins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix SPAdes-MetaBinner-unbins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s SPAdes-MetaBinner-unbins-{sample}.binclassification.tsv ] || touch SPAdes-MetaBinner-unbins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch SPAdes-MetaBinner-unbins-{sample}.binclassification.tsv
+fi
+mv SPAdes-MetaBinner-unbins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_spades_metabinner_unbins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_megahit_metabat2_unbins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-unbins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/MEGAHIT-MetaBAT2-unbins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_megahit", "fastatocontig2bin_tiara_megahit_metabat2_unbins"]
+description = "Domain classification of the MEGAHIT MetaBAT2 unbinned chunks (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_megahit_metabat2_unbins_{sample} && cd .tmp/tiara_classify_megahit_metabat2_unbins_{sample}
+# chunks for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/MEGAHIT-MetaBAT2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-unbins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBAT2-unbins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix MEGAHIT-MetaBAT2-unbins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-MetaBAT2-unbins-{sample}.binclassification.tsv ] || touch MEGAHIT-MetaBAT2-unbins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch MEGAHIT-MetaBAT2-unbins-{sample}.binclassification.tsv
+fi
+mv MEGAHIT-MetaBAT2-unbins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_megahit_metabat2_unbins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_megahit_maxbin2_unbins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/MEGAHIT-MaxBin2-unbins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/MEGAHIT-MaxBin2-unbins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_megahit", "fastatocontig2bin_tiara_megahit_maxbin2_unbins"]
+description = "Domain classification of the MEGAHIT MaxBin2 unbinned chunks (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_megahit_maxbin2_unbins_{sample} && cd .tmp/tiara_classify_megahit_maxbin2_unbins_{sample}
+# chunks for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/MEGAHIT-MaxBin2-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-MaxBin2-unbins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/MEGAHIT-MaxBin2-unbins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix MEGAHIT-MaxBin2-unbins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-MaxBin2-unbins-{sample}.binclassification.tsv ] || touch MEGAHIT-MaxBin2-unbins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch MEGAHIT-MaxBin2-unbins-{sample}.binclassification.tsv
+fi
+mv MEGAHIT-MaxBin2-unbins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_megahit_maxbin2_unbins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+[[rules]]
+name = "tiara_classify_megahit_metabinner_unbins"
+when = "config.bin_domain_classification"
+input = [
+    "{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt",
+    "intermediates/domain/contig2bin/MEGAHIT-MetaBinner-unbins-{sample}.tsv",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = ["{config.out_dir}/GenomeBinning/Tiara/MEGAHIT-MetaBinner-unbins-{sample}.binclassification.tsv"]
+depends_on = ["tiara_tiara_megahit", "fastatocontig2bin_tiara_megahit_metabinner_unbins"]
+description = "Domain classification of the MEGAHIT MetaBinner unbinned chunks (upstream TIARA_CLASSIFY)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+mkdir -p .tmp/tiara_classify_megahit_metabinner_unbins_{sample} && cd .tmp/tiara_classify_megahit_metabinner_unbins_{sample}
+# chunks for the copy loop (the classification names match the published .fa.gz basenames)
+for f in "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/MEGAHIT-MetaBinner-{sample}"*.fa.gz; do
+    [ -e "$f" ] || continue
+    ln -sf "$f" .
+done
+if [ -s "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBinner-unbins-{sample}.tsv" ]; then
+    domain_classification.R \\
+        --classification_file "$wd/{config.out_dir}/Taxonomy/Tiara/MEGAHIT-{sample}.tiara.txt" \\
+        --contig_to_bin "$wd/intermediates/domain/contig2bin/MEGAHIT-MetaBinner-unbins-{sample}.tsv" \\
+        --join_prokaryotes \\
+        --output_prefix MEGAHIT-MetaBinner-unbins-{sample}
+    mkdir eukarya
+    # zero-classified runs produce no output file (live: MetaBinner unbins)
+    [ -s MEGAHIT-MetaBinner-unbins-{sample}.binclassification.tsv ] || touch MEGAHIT-MetaBinner-unbins-{sample}.binclassification.tsv
+    mkdir prokarya
+    mkdir bacteria
+    mkdir archaea
+    mkdir organelle
+    mkdir unknown
+    while IFS=$'\\t' read bin domain; do
+        find -L . -maxdepth 1 -name "${bin}.fa.gz" -exec cp {} ${domain}/ \\;
+    done < bin2classification.tsv
+else
+    touch MEGAHIT-MetaBinner-unbins-{sample}.binclassification.tsv
+fi
+mv MEGAHIT-MetaBinner-unbins-{sample}.binclassification.tsv "$wd/{config.out_dir}/GenomeBinning/Tiara/"
+cd "$wd"
+rm -rf .tmp/tiara_classify_megahit_metabinner_unbins_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/tiara_classify.yaml"
+
+# CONCAT_TIARA_TSV (upstream QSV_CAT mode=rowskey; prefix tiara_summary,
+# published to results/GenomeBinning/Tiara/tiara_summary.tsv)
+[[rules]]
+name = "concat_tiara_tsv"
+when = "config.bin_domain_classification"
+input = ["{config.out_dir}/GenomeBinning/Tiara"]
+output = ["{config.out_dir}/GenomeBinning/Tiara/tiara_summary.tsv"]
+depends_on = [
+    "tiara_classify_spades_metabat2_bins",
+    "tiara_classify_spades_maxbin2_bins",
+    "tiara_classify_spades_concoct_bins",
+    "tiara_classify_spades_comebin_bins",
+    "tiara_classify_spades_metabinner_bins",
+    "tiara_classify_spades_semibin2_bins",
+    "tiara_classify_megahit_metabat2_bins",
+    "tiara_classify_megahit_maxbin2_bins",
+    "tiara_classify_megahit_concoct_bins",
+    "tiara_classify_megahit_comebin_bins",
+    "tiara_classify_megahit_metabinner_bins",
+    "tiara_classify_megahit_semibin2_bins",
+    "tiara_classify_spades_metabat2_unbins",
+    "tiara_classify_spades_maxbin2_unbins",
+    "tiara_classify_spades_metabinner_unbins",
+    "tiara_classify_megahit_metabat2_unbins",
+    "tiara_classify_megahit_maxbin2_unbins",
+    "tiara_classify_megahit_metabinner_unbins",
+]
+description = "Concatenate all Tiara bin classifications (upstream CONCAT_TIARA_TSV, qsv cat rowskey)"
+shell = """
+export QSV_SKIP_FORMAT_CHECK=1
+mkdir -p {config.out_dir}/GenomeBinning/Tiara
+if ls {config.out_dir}/GenomeBinning/Tiara/*.binclassification.tsv >/dev/null 2>&1; then
+    qsv cat rowskey --delimiter '\\t' -o tiara_summary.tsv {config.out_dir}/GenomeBinning/Tiara/*.binclassification.tsv
+else
+    touch tiara_summary.tsv
+fi
+mv tiara_summary.tsv {config.out_dir}/GenomeBinning/Tiara/
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/qsv.yaml"

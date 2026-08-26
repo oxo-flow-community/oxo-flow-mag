@@ -1,0 +1,8 @@
+# Environment for DAS Tool — pinned exactly to the upstream
+# nf-core/mag 5.5.0 upstream nf-core/dastool/dastool module environment (modules/nf-core/dastool/dastool/environment.yml); used by the --refine_bins_dastool branch.
+name: dastool
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::das_tool=1.1.7
