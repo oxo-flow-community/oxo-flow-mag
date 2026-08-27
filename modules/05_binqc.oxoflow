@@ -3667,3 +3667,2247 @@ time_limit = "4h"
 
 [rules.environment]
 conda = "envs/qsv.yaml"
+
+# ---------------------------------------------------------------------------
+# CheckM2 bin QC (upstream BIN_QC checkm2 section: CHECKM2_PREDICT ->
+# CONCAT_CHECKM2_TSV). The .dmnd database is user-provided
+# (config.checkm2_db).
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "checkm2_spades_metabat2"
+when = "config.run_checkm2"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-MetaBAT2-unclassified-unrefined-{sample}_checkm2_report.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv",
+]
+depends_on = ["metabat2_spades", "split_fasta_metabat2_spades"]
+description = "CheckM2 predict of the SPAdes MetaBAT2 bins and chunks (upstream CHECKM2_PREDICT)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.checkm2_db}" ]; then
+    echo "checkm2: config.checkm2_db must point to a local CheckM2 database (.dmnd) when run_checkm2=true" 1>&2
+    exit 1
+fi
+run_checkm2() {
+    # $1 = input glob pattern, $2 = prefix (predict output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm2 \\
+            predict \\
+            --input input_bins/* \\
+            --output-directory "$2" \\
+            --threads {threads} \\
+            --database_path "$wd/{config.checkm2_db}"
+        cp "$2/quality_report.tsv" "$2_checkm2_report.tsv"
+    else
+        # zero-bin group: emit the empty artifact so the declared-output
+        # contract holds
+        echo "checkm2: no bins matched for {sample} ($2)" 1>&2
+        mkdir -p "$2"
+        touch "$2_checkm2_report.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM2
+mkdir -p .tmp/checkm2_spades_metabat2_{sample} && cd .tmp/checkm2_spades_metabat2_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.fa.gz" SPAdes-MetaBAT2-unclassified-unrefined-{sample}
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/SPAdes-MetaBAT2-{sample}*[0-9].fa.gz" SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}
+mv SPAdes-MetaBAT2-unclassified-unrefined-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+mv SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+cd "$wd"
+rm -rf .tmp/checkm2_spades_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm2.yaml"
+
+[[rules]]
+name = "checkm2_spades_maxbin2"
+when = "config.run_checkm2"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-MaxBin2-unclassified-unrefined-{sample}_checkm2_report.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv",
+]
+depends_on = ["maxbin2_spades", "split_fasta_maxbin2_spades"]
+description = "CheckM2 predict of the SPAdes MaxBin2 bins and chunks (upstream CHECKM2_PREDICT)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.checkm2_db}" ]; then
+    echo "checkm2: config.checkm2_db must point to a local CheckM2 database (.dmnd) when run_checkm2=true" 1>&2
+    exit 1
+fi
+run_checkm2() {
+    # $1 = input glob pattern, $2 = prefix (predict output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm2 \\
+            predict \\
+            --input input_bins/* \\
+            --output-directory "$2" \\
+            --threads {threads} \\
+            --database_path "$wd/{config.checkm2_db}"
+        cp "$2/quality_report.tsv" "$2_checkm2_report.tsv"
+    else
+        # zero-bin group: emit the empty artifact so the declared-output
+        # contract holds
+        echo "checkm2: no bins matched for {sample} ($2)" 1>&2
+        mkdir -p "$2"
+        touch "$2_checkm2_report.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM2
+mkdir -p .tmp/checkm2_spades_maxbin2_{sample} && cd .tmp/checkm2_spades_maxbin2_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}*.fa.gz" SPAdes-MaxBin2-unclassified-unrefined-{sample}
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/SPAdes-MaxBin2-{sample}*[0-9].fa.gz" SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}
+mv SPAdes-MaxBin2-unclassified-unrefined-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+mv SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+cd "$wd"
+rm -rf .tmp/checkm2_spades_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm2.yaml"
+
+[[rules]]
+name = "checkm2_spades_concoct"
+when = "config.run_checkm2"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-CONCOCT-unclassified-unrefined-{sample}_checkm2_report.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv",
+]
+depends_on = ["concoct_extract_spades"]
+description = "CheckM2 predict of the SPAdes CONCOCT bins and chunks (upstream CHECKM2_PREDICT)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.checkm2_db}" ]; then
+    echo "checkm2: config.checkm2_db must point to a local CheckM2 database (.dmnd) when run_checkm2=true" 1>&2
+    exit 1
+fi
+run_checkm2() {
+    # $1 = input glob pattern, $2 = prefix (predict output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm2 \\
+            predict \\
+            --input input_bins/* \\
+            --output-directory "$2" \\
+            --threads {threads} \\
+            --database_path "$wd/{config.checkm2_db}"
+        cp "$2/quality_report.tsv" "$2_checkm2_report.tsv"
+    else
+        # zero-bin group: emit the empty artifact so the declared-output
+        # contract holds
+        echo "checkm2: no bins matched for {sample} ($2)" 1>&2
+        mkdir -p "$2"
+        touch "$2_checkm2_report.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM2
+mkdir -p .tmp/checkm2_spades_concoct_{sample} && cd .tmp/checkm2_spades_concoct_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}*.fa.gz" SPAdes-CONCOCT-unclassified-unrefined-{sample}
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/SPAdes-CONCOCT-{sample}*[0-9].fa.gz" SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}
+mv SPAdes-CONCOCT-unclassified-unrefined-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+mv SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+cd "$wd"
+rm -rf .tmp/checkm2_spades_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm2.yaml"
+
+[[rules]]
+name = "checkm2_spades_comebin"
+when = "config.run_checkm2"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-COMEBin-unclassified-unrefined-{sample}_checkm2_report.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv",
+]
+depends_on = ["comebin_spades"]
+description = "CheckM2 predict of the SPAdes COMEBin bins and chunks (upstream CHECKM2_PREDICT)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.checkm2_db}" ]; then
+    echo "checkm2: config.checkm2_db must point to a local CheckM2 database (.dmnd) when run_checkm2=true" 1>&2
+    exit 1
+fi
+run_checkm2() {
+    # $1 = input glob pattern, $2 = prefix (predict output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm2 \\
+            predict \\
+            --input input_bins/* \\
+            --output-directory "$2" \\
+            --threads {threads} \\
+            --database_path "$wd/{config.checkm2_db}"
+        cp "$2/quality_report.tsv" "$2_checkm2_report.tsv"
+    else
+        # zero-bin group: emit the empty artifact so the declared-output
+        # contract holds
+        echo "checkm2: no bins matched for {sample} ($2)" 1>&2
+        mkdir -p "$2"
+        touch "$2_checkm2_report.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM2
+mkdir -p .tmp/checkm2_spades_comebin_{sample} && cd .tmp/checkm2_spades_comebin_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}*.fa.gz" SPAdes-COMEBin-unclassified-unrefined-{sample}
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned/SPAdes-COMEBin-{sample}*[0-9].fa.gz" SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}
+mv SPAdes-COMEBin-unclassified-unrefined-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+mv SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+cd "$wd"
+rm -rf .tmp/checkm2_spades_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm2.yaml"
+
+[[rules]]
+name = "checkm2_spades_metabinner"
+when = "config.run_checkm2"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-MetaBinner-unclassified-unrefined-{sample}_checkm2_report.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv",
+]
+depends_on = ["metabinner_bins_spades", "split_fasta_metabinner_spades"]
+description = "CheckM2 predict of the SPAdes MetaBinner bins and chunks (upstream CHECKM2_PREDICT)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.checkm2_db}" ]; then
+    echo "checkm2: config.checkm2_db must point to a local CheckM2 database (.dmnd) when run_checkm2=true" 1>&2
+    exit 1
+fi
+run_checkm2() {
+    # $1 = input glob pattern, $2 = prefix (predict output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm2 \\
+            predict \\
+            --input input_bins/* \\
+            --output-directory "$2" \\
+            --threads {threads} \\
+            --database_path "$wd/{config.checkm2_db}"
+        cp "$2/quality_report.tsv" "$2_checkm2_report.tsv"
+    else
+        # zero-bin group: emit the empty artifact so the declared-output
+        # contract holds
+        echo "checkm2: no bins matched for {sample} ($2)" 1>&2
+        mkdir -p "$2"
+        touch "$2_checkm2_report.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM2
+mkdir -p .tmp/checkm2_spades_metabinner_{sample} && cd .tmp/checkm2_spades_metabinner_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sample}*.fa.gz" SPAdes-MetaBinner-unclassified-unrefined-{sample}
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/SPAdes-MetaBinner-{sample}*[0-9].fa.gz" SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}
+mv SPAdes-MetaBinner-unclassified-unrefined-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+mv SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+cd "$wd"
+rm -rf .tmp/checkm2_spades_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm2.yaml"
+
+[[rules]]
+name = "checkm2_spades_semibin2"
+when = "config.run_checkm2"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-SemiBin2-unclassified-unrefined-{sample}_checkm2_report.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv",
+]
+depends_on = ["semibin_spades"]
+description = "CheckM2 predict of the SPAdes SemiBin2 bins and chunks (upstream CHECKM2_PREDICT)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.checkm2_db}" ]; then
+    echo "checkm2: config.checkm2_db must point to a local CheckM2 database (.dmnd) when run_checkm2=true" 1>&2
+    exit 1
+fi
+run_checkm2() {
+    # $1 = input glob pattern, $2 = prefix (predict output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm2 \\
+            predict \\
+            --input input_bins/* \\
+            --output-directory "$2" \\
+            --threads {threads} \\
+            --database_path "$wd/{config.checkm2_db}"
+        cp "$2/quality_report.tsv" "$2_checkm2_report.tsv"
+    else
+        # zero-bin group: emit the empty artifact so the declared-output
+        # contract holds
+        echo "checkm2: no bins matched for {sample} ($2)" 1>&2
+        mkdir -p "$2"
+        touch "$2_checkm2_report.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM2
+mkdir -p .tmp/checkm2_spades_semibin2_{sample} && cd .tmp/checkm2_spades_semibin2_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}*.fa.gz" SPAdes-SemiBin2-unclassified-unrefined-{sample}
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/SPAdes-SemiBin2-{sample}*[0-9].fa.gz" SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}
+mv SPAdes-SemiBin2-unclassified-unrefined-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+mv SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+cd "$wd"
+rm -rf .tmp/checkm2_spades_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm2.yaml"
+
+[[rules]]
+name = "checkm2_megahit_metabat2"
+when = "config.run_checkm2"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_checkm2_report.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv",
+]
+depends_on = ["metabat2_megahit", "split_fasta_metabat2_megahit"]
+description = "CheckM2 predict of the MEGAHIT MetaBAT2 bins and chunks (upstream CHECKM2_PREDICT)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.checkm2_db}" ]; then
+    echo "checkm2: config.checkm2_db must point to a local CheckM2 database (.dmnd) when run_checkm2=true" 1>&2
+    exit 1
+fi
+run_checkm2() {
+    # $1 = input glob pattern, $2 = prefix (predict output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm2 \\
+            predict \\
+            --input input_bins/* \\
+            --output-directory "$2" \\
+            --threads {threads} \\
+            --database_path "$wd/{config.checkm2_db}"
+        cp "$2/quality_report.tsv" "$2_checkm2_report.tsv"
+    else
+        # zero-bin group: emit the empty artifact so the declared-output
+        # contract holds
+        echo "checkm2: no bins matched for {sample} ($2)" 1>&2
+        mkdir -p "$2"
+        touch "$2_checkm2_report.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM2
+mkdir -p .tmp/checkm2_megahit_metabat2_{sample} && cd .tmp/checkm2_megahit_metabat2_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*.fa.gz" MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/MEGAHIT-MetaBAT2-{sample}*[0-9].fa.gz" MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}
+mv MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+mv MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+cd "$wd"
+rm -rf .tmp/checkm2_megahit_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm2.yaml"
+
+[[rules]]
+name = "checkm2_megahit_maxbin2"
+when = "config.run_checkm2"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_checkm2_report.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv",
+]
+depends_on = ["maxbin2_megahit", "split_fasta_maxbin2_megahit"]
+description = "CheckM2 predict of the MEGAHIT MaxBin2 bins and chunks (upstream CHECKM2_PREDICT)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.checkm2_db}" ]; then
+    echo "checkm2: config.checkm2_db must point to a local CheckM2 database (.dmnd) when run_checkm2=true" 1>&2
+    exit 1
+fi
+run_checkm2() {
+    # $1 = input glob pattern, $2 = prefix (predict output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm2 \\
+            predict \\
+            --input input_bins/* \\
+            --output-directory "$2" \\
+            --threads {threads} \\
+            --database_path "$wd/{config.checkm2_db}"
+        cp "$2/quality_report.tsv" "$2_checkm2_report.tsv"
+    else
+        # zero-bin group: emit the empty artifact so the declared-output
+        # contract holds
+        echo "checkm2: no bins matched for {sample} ($2)" 1>&2
+        mkdir -p "$2"
+        touch "$2_checkm2_report.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM2
+mkdir -p .tmp/checkm2_megahit_maxbin2_{sample} && cd .tmp/checkm2_megahit_maxbin2_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}*.fa.gz" MEGAHIT-MaxBin2-unclassified-unrefined-{sample}
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/MEGAHIT-MaxBin2-{sample}*[0-9].fa.gz" MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}
+mv MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+mv MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+cd "$wd"
+rm -rf .tmp/checkm2_megahit_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm2.yaml"
+
+[[rules]]
+name = "checkm2_megahit_concoct"
+when = "config.run_checkm2"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_checkm2_report.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv",
+]
+depends_on = ["concoct_extract_megahit"]
+description = "CheckM2 predict of the MEGAHIT CONCOCT bins and chunks (upstream CHECKM2_PREDICT)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.checkm2_db}" ]; then
+    echo "checkm2: config.checkm2_db must point to a local CheckM2 database (.dmnd) when run_checkm2=true" 1>&2
+    exit 1
+fi
+run_checkm2() {
+    # $1 = input glob pattern, $2 = prefix (predict output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm2 \\
+            predict \\
+            --input input_bins/* \\
+            --output-directory "$2" \\
+            --threads {threads} \\
+            --database_path "$wd/{config.checkm2_db}"
+        cp "$2/quality_report.tsv" "$2_checkm2_report.tsv"
+    else
+        # zero-bin group: emit the empty artifact so the declared-output
+        # contract holds
+        echo "checkm2: no bins matched for {sample} ($2)" 1>&2
+        mkdir -p "$2"
+        touch "$2_checkm2_report.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM2
+mkdir -p .tmp/checkm2_megahit_concoct_{sample} && cd .tmp/checkm2_megahit_concoct_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}*.fa.gz" MEGAHIT-CONCOCT-unclassified-unrefined-{sample}
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/MEGAHIT-CONCOCT-{sample}*[0-9].fa.gz" MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}
+mv MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+mv MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+cd "$wd"
+rm -rf .tmp/checkm2_megahit_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm2.yaml"
+
+[[rules]]
+name = "checkm2_megahit_comebin"
+when = "config.run_checkm2"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-COMEBin-unclassified-unrefined-{sample}_checkm2_report.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv",
+]
+depends_on = ["comebin_megahit"]
+description = "CheckM2 predict of the MEGAHIT COMEBin bins and chunks (upstream CHECKM2_PREDICT)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.checkm2_db}" ]; then
+    echo "checkm2: config.checkm2_db must point to a local CheckM2 database (.dmnd) when run_checkm2=true" 1>&2
+    exit 1
+fi
+run_checkm2() {
+    # $1 = input glob pattern, $2 = prefix (predict output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm2 \\
+            predict \\
+            --input input_bins/* \\
+            --output-directory "$2" \\
+            --threads {threads} \\
+            --database_path "$wd/{config.checkm2_db}"
+        cp "$2/quality_report.tsv" "$2_checkm2_report.tsv"
+    else
+        # zero-bin group: emit the empty artifact so the declared-output
+        # contract holds
+        echo "checkm2: no bins matched for {sample} ($2)" 1>&2
+        mkdir -p "$2"
+        touch "$2_checkm2_report.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM2
+mkdir -p .tmp/checkm2_megahit_comebin_{sample} && cd .tmp/checkm2_megahit_comebin_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}*.fa.gz" MEGAHIT-COMEBin-unclassified-unrefined-{sample}
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned/MEGAHIT-COMEBin-{sample}*[0-9].fa.gz" MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}
+mv MEGAHIT-COMEBin-unclassified-unrefined-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+mv MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+cd "$wd"
+rm -rf .tmp/checkm2_megahit_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm2.yaml"
+
+[[rules]]
+name = "checkm2_megahit_metabinner"
+when = "config.run_checkm2"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_checkm2_report.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv",
+]
+depends_on = ["metabinner_bins_megahit", "split_fasta_metabinner_megahit"]
+description = "CheckM2 predict of the MEGAHIT MetaBinner bins and chunks (upstream CHECKM2_PREDICT)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.checkm2_db}" ]; then
+    echo "checkm2: config.checkm2_db must point to a local CheckM2 database (.dmnd) when run_checkm2=true" 1>&2
+    exit 1
+fi
+run_checkm2() {
+    # $1 = input glob pattern, $2 = prefix (predict output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm2 \\
+            predict \\
+            --input input_bins/* \\
+            --output-directory "$2" \\
+            --threads {threads} \\
+            --database_path "$wd/{config.checkm2_db}"
+        cp "$2/quality_report.tsv" "$2_checkm2_report.tsv"
+    else
+        # zero-bin group: emit the empty artifact so the declared-output
+        # contract holds
+        echo "checkm2: no bins matched for {sample} ($2)" 1>&2
+        mkdir -p "$2"
+        touch "$2_checkm2_report.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM2
+mkdir -p .tmp/checkm2_megahit_metabinner_{sample} && cd .tmp/checkm2_megahit_metabinner_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{sample}*.fa.gz" MEGAHIT-MetaBinner-unclassified-unrefined-{sample}
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/MEGAHIT-MetaBinner-{sample}*[0-9].fa.gz" MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}
+mv MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+mv MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+cd "$wd"
+rm -rf .tmp/checkm2_megahit_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm2.yaml"
+
+[[rules]]
+name = "checkm2_megahit_semibin2"
+when = "config.run_checkm2"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_checkm2_report.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv",
+]
+depends_on = ["semibin_megahit"]
+description = "CheckM2 predict of the MEGAHIT SemiBin2 bins and chunks (upstream CHECKM2_PREDICT)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.checkm2_db}" ]; then
+    echo "checkm2: config.checkm2_db must point to a local CheckM2 database (.dmnd) when run_checkm2=true" 1>&2
+    exit 1
+fi
+run_checkm2() {
+    # $1 = input glob pattern, $2 = prefix (predict output basename)
+    mkdir -p input_bins
+    for f in $1; do
+        [ -e "$f" ] || continue
+        gzip -cdf "$f" > input_bins/$(basename "$f" .gz)
+    done
+    if ls input_bins/* >/dev/null 2>&1; then
+        checkm2 \\
+            predict \\
+            --input input_bins/* \\
+            --output-directory "$2" \\
+            --threads {threads} \\
+            --database_path "$wd/{config.checkm2_db}"
+        cp "$2/quality_report.tsv" "$2_checkm2_report.tsv"
+    else
+        # zero-bin group: emit the empty artifact so the declared-output
+        # contract holds
+        echo "checkm2: no bins matched for {sample} ($2)" 1>&2
+        mkdir -p "$2"
+        touch "$2_checkm2_report.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/CheckM2
+mkdir -p .tmp/checkm2_megahit_semibin2_{sample} && cd .tmp/checkm2_megahit_semibin2_{sample}
+# bins (meta.refinement='unrefined')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}*.fa.gz" MEGAHIT-SemiBin2-unclassified-unrefined-{sample}
+rm -rf input_bins
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_checkm2 "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/MEGAHIT-SemiBin2-{sample}*[0-9].fa.gz" MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}
+mv MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+mv MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/"
+cd "$wd"
+rm -rf .tmp/checkm2_megahit_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "12h"
+
+[rules.environment]
+conda = "envs/checkm2.yaml"
+
+[[rules]]
+name = "concat_checkm2_tsv"
+when = "config.run_checkm2"
+input = ["{config.out_dir}/GenomeBinning/QC/CheckM2"]
+output = ["{config.out_dir}/GenomeBinning/QC/checkm2_summary.tsv"]
+depends_on = [
+    "checkm2_spades_metabat2",
+    "checkm2_spades_maxbin2",
+    "checkm2_spades_concoct",
+    "checkm2_spades_comebin",
+    "checkm2_spades_metabinner",
+    "checkm2_spades_semibin2",
+    "checkm2_megahit_metabat2",
+    "checkm2_megahit_maxbin2",
+    "checkm2_megahit_concoct",
+    "checkm2_megahit_comebin",
+    "checkm2_megahit_metabinner",
+    "checkm2_megahit_semibin2",
+]
+description = "Concatenate all CheckM2 report tables (upstream CONCAT_CHECKM2_TSV, qsv cat rowskey)"
+shell = """
+export QSV_SKIP_FORMAT_CHECK=1
+mkdir -p {config.out_dir}/GenomeBinning/QC
+if ls {config.out_dir}/GenomeBinning/QC/CheckM2/*_checkm2_report.tsv >/dev/null 2>&1; then
+    qsv cat rowskey --delimiter '\\t' -o checkm2_summary.tsv {config.out_dir}/GenomeBinning/QC/CheckM2/*_checkm2_report.tsv
+else
+    touch checkm2_summary.tsv
+fi
+mv checkm2_summary.tsv {config.out_dir}/GenomeBinning/QC/
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/qsv.yaml"
+
+
+# ---------------------------------------------------------------------------
+# GUNC contamination QC (upstream BIN_QC gunc section: GUNC_RUN ->
+# CONCAT_GUNC_TSV, plus GUNC_MERGECHECKM -> CONCAT_GUNC_CHECKM_TSV when
+# run_checkm is also on). The reference database is user-provided
+# (config.gunc_db).
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "gunc_spades_metabat2"
+when = "config.run_gunc"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MetaBAT2-unclassified-unrefined-{sample}/SPAdes-MetaBAT2-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MetaBAT2-unclassified-unrefined-{sample}/SPAdes-MetaBAT2-unclassified-unrefined-{sample}_all_levels.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_all_levels.tsv",
+]
+depends_on = ["metabat2_spades", "split_fasta_metabat2_spades"]
+description = "GUNC run of the SPAdes MetaBAT2 bins and chunks (upstream GUNC_RUN)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.gunc_db}" ]; then
+    echo "gunc: config.gunc_db must point to a local GUNC database when run_gunc=true" 1>&2
+    exit 1
+fi
+run_gunc() {
+    # $1 = input glob pattern, $2 = prefix (output basename)
+    mkdir -p input_files
+    for f in $1; do
+        [ -e "$f" ] || continue
+        ln -sf "$f" input_files/$(basename "$f")
+    done
+    if ls input_files/* >/dev/null 2>&1; then
+        ls input_files/* > input_files.txt
+        gunc \\
+            run \\
+            --input_file input_files.txt \\
+            --db_file "$wd/{config.gunc_db}" \\
+            --threads {threads}
+        # gunc names the tables after the database file; rename to the group
+        # prefix so raw/<prefix>/ holds exactly one group's tables
+        mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
+        mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds
+        echo "gunc: no bins matched for {sample} ($2)" 1>&2
+        touch "$2_maxCSS_level.tsv"
+        touch "$2_all_levels.tsv"
+    fi
+    mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2"
+    mv "$2_maxCSS_level.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+    mv "$2_all_levels.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/raw
+mkdir -p .tmp/gunc_spades_metabat2_{sample} && cd .tmp/gunc_spades_metabat2_{sample}
+# bins (meta.refinement='unrefined')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.fa.gz" SPAdes-MetaBAT2-unclassified-unrefined-{sample}
+rm -rf input_files
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/SPAdes-MetaBAT2-{sample}*[0-9].fa.gz" SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}
+cd "$wd"
+rm -rf .tmp/gunc_spades_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_spades_maxbin2"
+when = "config.run_gunc"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MaxBin2-unclassified-unrefined-{sample}/SPAdes-MaxBin2-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MaxBin2-unclassified-unrefined-{sample}/SPAdes-MaxBin2-unclassified-unrefined-{sample}_all_levels.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_all_levels.tsv",
+]
+depends_on = ["maxbin2_spades", "split_fasta_maxbin2_spades"]
+description = "GUNC run of the SPAdes MaxBin2 bins and chunks (upstream GUNC_RUN)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.gunc_db}" ]; then
+    echo "gunc: config.gunc_db must point to a local GUNC database when run_gunc=true" 1>&2
+    exit 1
+fi
+run_gunc() {
+    # $1 = input glob pattern, $2 = prefix (output basename)
+    mkdir -p input_files
+    for f in $1; do
+        [ -e "$f" ] || continue
+        ln -sf "$f" input_files/$(basename "$f")
+    done
+    if ls input_files/* >/dev/null 2>&1; then
+        ls input_files/* > input_files.txt
+        gunc \\
+            run \\
+            --input_file input_files.txt \\
+            --db_file "$wd/{config.gunc_db}" \\
+            --threads {threads}
+        # gunc names the tables after the database file; rename to the group
+        # prefix so raw/<prefix>/ holds exactly one group's tables
+        mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
+        mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds
+        echo "gunc: no bins matched for {sample} ($2)" 1>&2
+        touch "$2_maxCSS_level.tsv"
+        touch "$2_all_levels.tsv"
+    fi
+    mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2"
+    mv "$2_maxCSS_level.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+    mv "$2_all_levels.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/raw
+mkdir -p .tmp/gunc_spades_maxbin2_{sample} && cd .tmp/gunc_spades_maxbin2_{sample}
+# bins (meta.refinement='unrefined')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}*.fa.gz" SPAdes-MaxBin2-unclassified-unrefined-{sample}
+rm -rf input_files
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/SPAdes-MaxBin2-{sample}*[0-9].fa.gz" SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}
+cd "$wd"
+rm -rf .tmp/gunc_spades_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_spades_concoct"
+when = "config.run_gunc"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-CONCOCT-unclassified-unrefined-{sample}/SPAdes-CONCOCT-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-CONCOCT-unclassified-unrefined-{sample}/SPAdes-CONCOCT-unclassified-unrefined-{sample}_all_levels.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_all_levels.tsv",
+]
+depends_on = ["concoct_extract_spades"]
+description = "GUNC run of the SPAdes CONCOCT bins and chunks (upstream GUNC_RUN)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.gunc_db}" ]; then
+    echo "gunc: config.gunc_db must point to a local GUNC database when run_gunc=true" 1>&2
+    exit 1
+fi
+run_gunc() {
+    # $1 = input glob pattern, $2 = prefix (output basename)
+    mkdir -p input_files
+    for f in $1; do
+        [ -e "$f" ] || continue
+        ln -sf "$f" input_files/$(basename "$f")
+    done
+    if ls input_files/* >/dev/null 2>&1; then
+        ls input_files/* > input_files.txt
+        gunc \\
+            run \\
+            --input_file input_files.txt \\
+            --db_file "$wd/{config.gunc_db}" \\
+            --threads {threads}
+        # gunc names the tables after the database file; rename to the group
+        # prefix so raw/<prefix>/ holds exactly one group's tables
+        mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
+        mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds
+        echo "gunc: no bins matched for {sample} ($2)" 1>&2
+        touch "$2_maxCSS_level.tsv"
+        touch "$2_all_levels.tsv"
+    fi
+    mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2"
+    mv "$2_maxCSS_level.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+    mv "$2_all_levels.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/raw
+mkdir -p .tmp/gunc_spades_concoct_{sample} && cd .tmp/gunc_spades_concoct_{sample}
+# bins (meta.refinement='unrefined')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}*.fa.gz" SPAdes-CONCOCT-unclassified-unrefined-{sample}
+rm -rf input_files
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/SPAdes-CONCOCT-{sample}*[0-9].fa.gz" SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}
+cd "$wd"
+rm -rf .tmp/gunc_spades_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_spades_comebin"
+when = "config.run_gunc"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-COMEBin-unclassified-unrefined-{sample}/SPAdes-COMEBin-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-COMEBin-unclassified-unrefined-{sample}/SPAdes-COMEBin-unclassified-unrefined-{sample}_all_levels.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_all_levels.tsv",
+]
+depends_on = ["comebin_spades"]
+description = "GUNC run of the SPAdes COMEBin bins and chunks (upstream GUNC_RUN)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.gunc_db}" ]; then
+    echo "gunc: config.gunc_db must point to a local GUNC database when run_gunc=true" 1>&2
+    exit 1
+fi
+run_gunc() {
+    # $1 = input glob pattern, $2 = prefix (output basename)
+    mkdir -p input_files
+    for f in $1; do
+        [ -e "$f" ] || continue
+        ln -sf "$f" input_files/$(basename "$f")
+    done
+    if ls input_files/* >/dev/null 2>&1; then
+        ls input_files/* > input_files.txt
+        gunc \\
+            run \\
+            --input_file input_files.txt \\
+            --db_file "$wd/{config.gunc_db}" \\
+            --threads {threads}
+        # gunc names the tables after the database file; rename to the group
+        # prefix so raw/<prefix>/ holds exactly one group's tables
+        mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
+        mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds
+        echo "gunc: no bins matched for {sample} ($2)" 1>&2
+        touch "$2_maxCSS_level.tsv"
+        touch "$2_all_levels.tsv"
+    fi
+    mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2"
+    mv "$2_maxCSS_level.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+    mv "$2_all_levels.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/raw
+mkdir -p .tmp/gunc_spades_comebin_{sample} && cd .tmp/gunc_spades_comebin_{sample}
+# bins (meta.refinement='unrefined')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}*.fa.gz" SPAdes-COMEBin-unclassified-unrefined-{sample}
+rm -rf input_files
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned/SPAdes-COMEBin-{sample}*[0-9].fa.gz" SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}
+cd "$wd"
+rm -rf .tmp/gunc_spades_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_spades_metabinner"
+when = "config.run_gunc"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MetaBinner-unclassified-unrefined-{sample}/SPAdes-MetaBinner-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MetaBinner-unclassified-unrefined-{sample}/SPAdes-MetaBinner-unclassified-unrefined-{sample}_all_levels.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_all_levels.tsv",
+]
+depends_on = ["metabinner_bins_spades", "split_fasta_metabinner_spades"]
+description = "GUNC run of the SPAdes MetaBinner bins and chunks (upstream GUNC_RUN)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.gunc_db}" ]; then
+    echo "gunc: config.gunc_db must point to a local GUNC database when run_gunc=true" 1>&2
+    exit 1
+fi
+run_gunc() {
+    # $1 = input glob pattern, $2 = prefix (output basename)
+    mkdir -p input_files
+    for f in $1; do
+        [ -e "$f" ] || continue
+        ln -sf "$f" input_files/$(basename "$f")
+    done
+    if ls input_files/* >/dev/null 2>&1; then
+        ls input_files/* > input_files.txt
+        gunc \\
+            run \\
+            --input_file input_files.txt \\
+            --db_file "$wd/{config.gunc_db}" \\
+            --threads {threads}
+        # gunc names the tables after the database file; rename to the group
+        # prefix so raw/<prefix>/ holds exactly one group's tables
+        mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
+        mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds
+        echo "gunc: no bins matched for {sample} ($2)" 1>&2
+        touch "$2_maxCSS_level.tsv"
+        touch "$2_all_levels.tsv"
+    fi
+    mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2"
+    mv "$2_maxCSS_level.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+    mv "$2_all_levels.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/raw
+mkdir -p .tmp/gunc_spades_metabinner_{sample} && cd .tmp/gunc_spades_metabinner_{sample}
+# bins (meta.refinement='unrefined')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sample}*.fa.gz" SPAdes-MetaBinner-unclassified-unrefined-{sample}
+rm -rf input_files
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/SPAdes-MetaBinner-{sample}*[0-9].fa.gz" SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}
+cd "$wd"
+rm -rf .tmp/gunc_spades_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_spades_semibin2"
+when = "config.run_gunc"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-SemiBin2-unclassified-unrefined-{sample}/SPAdes-SemiBin2-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-SemiBin2-unclassified-unrefined-{sample}/SPAdes-SemiBin2-unclassified-unrefined-{sample}_all_levels.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_all_levels.tsv",
+]
+depends_on = ["semibin_spades"]
+description = "GUNC run of the SPAdes SemiBin2 bins and chunks (upstream GUNC_RUN)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.gunc_db}" ]; then
+    echo "gunc: config.gunc_db must point to a local GUNC database when run_gunc=true" 1>&2
+    exit 1
+fi
+run_gunc() {
+    # $1 = input glob pattern, $2 = prefix (output basename)
+    mkdir -p input_files
+    for f in $1; do
+        [ -e "$f" ] || continue
+        ln -sf "$f" input_files/$(basename "$f")
+    done
+    if ls input_files/* >/dev/null 2>&1; then
+        ls input_files/* > input_files.txt
+        gunc \\
+            run \\
+            --input_file input_files.txt \\
+            --db_file "$wd/{config.gunc_db}" \\
+            --threads {threads}
+        # gunc names the tables after the database file; rename to the group
+        # prefix so raw/<prefix>/ holds exactly one group's tables
+        mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
+        mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds
+        echo "gunc: no bins matched for {sample} ($2)" 1>&2
+        touch "$2_maxCSS_level.tsv"
+        touch "$2_all_levels.tsv"
+    fi
+    mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2"
+    mv "$2_maxCSS_level.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+    mv "$2_all_levels.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/raw
+mkdir -p .tmp/gunc_spades_semibin2_{sample} && cd .tmp/gunc_spades_semibin2_{sample}
+# bins (meta.refinement='unrefined')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}*.fa.gz" SPAdes-SemiBin2-unclassified-unrefined-{sample}
+rm -rf input_files
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/SPAdes-SemiBin2-{sample}*[0-9].fa.gz" SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}
+cd "$wd"
+rm -rf .tmp/gunc_spades_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_megahit_metabat2"
+when = "config.run_gunc"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_all_levels.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_all_levels.tsv",
+]
+depends_on = ["metabat2_megahit", "split_fasta_metabat2_megahit"]
+description = "GUNC run of the MEGAHIT MetaBAT2 bins and chunks (upstream GUNC_RUN)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.gunc_db}" ]; then
+    echo "gunc: config.gunc_db must point to a local GUNC database when run_gunc=true" 1>&2
+    exit 1
+fi
+run_gunc() {
+    # $1 = input glob pattern, $2 = prefix (output basename)
+    mkdir -p input_files
+    for f in $1; do
+        [ -e "$f" ] || continue
+        ln -sf "$f" input_files/$(basename "$f")
+    done
+    if ls input_files/* >/dev/null 2>&1; then
+        ls input_files/* > input_files.txt
+        gunc \\
+            run \\
+            --input_file input_files.txt \\
+            --db_file "$wd/{config.gunc_db}" \\
+            --threads {threads}
+        # gunc names the tables after the database file; rename to the group
+        # prefix so raw/<prefix>/ holds exactly one group's tables
+        mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
+        mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds
+        echo "gunc: no bins matched for {sample} ($2)" 1>&2
+        touch "$2_maxCSS_level.tsv"
+        touch "$2_all_levels.tsv"
+    fi
+    mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2"
+    mv "$2_maxCSS_level.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+    mv "$2_all_levels.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/raw
+mkdir -p .tmp/gunc_megahit_metabat2_{sample} && cd .tmp/gunc_megahit_metabat2_{sample}
+# bins (meta.refinement='unrefined')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*.fa.gz" MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}
+rm -rf input_files
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/MEGAHIT-MetaBAT2-{sample}*[0-9].fa.gz" MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}
+cd "$wd"
+rm -rf .tmp/gunc_megahit_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_megahit_maxbin2"
+when = "config.run_gunc"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_all_levels.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_all_levels.tsv",
+]
+depends_on = ["maxbin2_megahit", "split_fasta_maxbin2_megahit"]
+description = "GUNC run of the MEGAHIT MaxBin2 bins and chunks (upstream GUNC_RUN)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.gunc_db}" ]; then
+    echo "gunc: config.gunc_db must point to a local GUNC database when run_gunc=true" 1>&2
+    exit 1
+fi
+run_gunc() {
+    # $1 = input glob pattern, $2 = prefix (output basename)
+    mkdir -p input_files
+    for f in $1; do
+        [ -e "$f" ] || continue
+        ln -sf "$f" input_files/$(basename "$f")
+    done
+    if ls input_files/* >/dev/null 2>&1; then
+        ls input_files/* > input_files.txt
+        gunc \\
+            run \\
+            --input_file input_files.txt \\
+            --db_file "$wd/{config.gunc_db}" \\
+            --threads {threads}
+        # gunc names the tables after the database file; rename to the group
+        # prefix so raw/<prefix>/ holds exactly one group's tables
+        mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
+        mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds
+        echo "gunc: no bins matched for {sample} ($2)" 1>&2
+        touch "$2_maxCSS_level.tsv"
+        touch "$2_all_levels.tsv"
+    fi
+    mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2"
+    mv "$2_maxCSS_level.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+    mv "$2_all_levels.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/raw
+mkdir -p .tmp/gunc_megahit_maxbin2_{sample} && cd .tmp/gunc_megahit_maxbin2_{sample}
+# bins (meta.refinement='unrefined')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}*.fa.gz" MEGAHIT-MaxBin2-unclassified-unrefined-{sample}
+rm -rf input_files
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/MEGAHIT-MaxBin2-{sample}*[0-9].fa.gz" MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}
+cd "$wd"
+rm -rf .tmp/gunc_megahit_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_megahit_concoct"
+when = "config.run_gunc"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_all_levels.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_all_levels.tsv",
+]
+depends_on = ["concoct_extract_megahit"]
+description = "GUNC run of the MEGAHIT CONCOCT bins and chunks (upstream GUNC_RUN)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.gunc_db}" ]; then
+    echo "gunc: config.gunc_db must point to a local GUNC database when run_gunc=true" 1>&2
+    exit 1
+fi
+run_gunc() {
+    # $1 = input glob pattern, $2 = prefix (output basename)
+    mkdir -p input_files
+    for f in $1; do
+        [ -e "$f" ] || continue
+        ln -sf "$f" input_files/$(basename "$f")
+    done
+    if ls input_files/* >/dev/null 2>&1; then
+        ls input_files/* > input_files.txt
+        gunc \\
+            run \\
+            --input_file input_files.txt \\
+            --db_file "$wd/{config.gunc_db}" \\
+            --threads {threads}
+        # gunc names the tables after the database file; rename to the group
+        # prefix so raw/<prefix>/ holds exactly one group's tables
+        mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
+        mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds
+        echo "gunc: no bins matched for {sample} ($2)" 1>&2
+        touch "$2_maxCSS_level.tsv"
+        touch "$2_all_levels.tsv"
+    fi
+    mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2"
+    mv "$2_maxCSS_level.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+    mv "$2_all_levels.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/raw
+mkdir -p .tmp/gunc_megahit_concoct_{sample} && cd .tmp/gunc_megahit_concoct_{sample}
+# bins (meta.refinement='unrefined')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}*.fa.gz" MEGAHIT-CONCOCT-unclassified-unrefined-{sample}
+rm -rf input_files
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/MEGAHIT-CONCOCT-{sample}*[0-9].fa.gz" MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}
+cd "$wd"
+rm -rf .tmp/gunc_megahit_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_megahit_comebin"
+when = "config.run_gunc"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-COMEBin-unclassified-unrefined-{sample}/MEGAHIT-COMEBin-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-COMEBin-unclassified-unrefined-{sample}/MEGAHIT-COMEBin-unclassified-unrefined-{sample}_all_levels.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_all_levels.tsv",
+]
+depends_on = ["comebin_megahit"]
+description = "GUNC run of the MEGAHIT COMEBin bins and chunks (upstream GUNC_RUN)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.gunc_db}" ]; then
+    echo "gunc: config.gunc_db must point to a local GUNC database when run_gunc=true" 1>&2
+    exit 1
+fi
+run_gunc() {
+    # $1 = input glob pattern, $2 = prefix (output basename)
+    mkdir -p input_files
+    for f in $1; do
+        [ -e "$f" ] || continue
+        ln -sf "$f" input_files/$(basename "$f")
+    done
+    if ls input_files/* >/dev/null 2>&1; then
+        ls input_files/* > input_files.txt
+        gunc \\
+            run \\
+            --input_file input_files.txt \\
+            --db_file "$wd/{config.gunc_db}" \\
+            --threads {threads}
+        # gunc names the tables after the database file; rename to the group
+        # prefix so raw/<prefix>/ holds exactly one group's tables
+        mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
+        mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds
+        echo "gunc: no bins matched for {sample} ($2)" 1>&2
+        touch "$2_maxCSS_level.tsv"
+        touch "$2_all_levels.tsv"
+    fi
+    mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2"
+    mv "$2_maxCSS_level.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+    mv "$2_all_levels.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/raw
+mkdir -p .tmp/gunc_megahit_comebin_{sample} && cd .tmp/gunc_megahit_comebin_{sample}
+# bins (meta.refinement='unrefined')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}*.fa.gz" MEGAHIT-COMEBin-unclassified-unrefined-{sample}
+rm -rf input_files
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned/MEGAHIT-COMEBin-{sample}*[0-9].fa.gz" MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}
+cd "$wd"
+rm -rf .tmp/gunc_megahit_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_megahit_metabinner"
+when = "config.run_gunc"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_all_levels.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_all_levels.tsv",
+]
+depends_on = ["metabinner_bins_megahit", "split_fasta_metabinner_megahit"]
+description = "GUNC run of the MEGAHIT MetaBinner bins and chunks (upstream GUNC_RUN)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.gunc_db}" ]; then
+    echo "gunc: config.gunc_db must point to a local GUNC database when run_gunc=true" 1>&2
+    exit 1
+fi
+run_gunc() {
+    # $1 = input glob pattern, $2 = prefix (output basename)
+    mkdir -p input_files
+    for f in $1; do
+        [ -e "$f" ] || continue
+        ln -sf "$f" input_files/$(basename "$f")
+    done
+    if ls input_files/* >/dev/null 2>&1; then
+        ls input_files/* > input_files.txt
+        gunc \\
+            run \\
+            --input_file input_files.txt \\
+            --db_file "$wd/{config.gunc_db}" \\
+            --threads {threads}
+        # gunc names the tables after the database file; rename to the group
+        # prefix so raw/<prefix>/ holds exactly one group's tables
+        mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
+        mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds
+        echo "gunc: no bins matched for {sample} ($2)" 1>&2
+        touch "$2_maxCSS_level.tsv"
+        touch "$2_all_levels.tsv"
+    fi
+    mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2"
+    mv "$2_maxCSS_level.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+    mv "$2_all_levels.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/raw
+mkdir -p .tmp/gunc_megahit_metabinner_{sample} && cd .tmp/gunc_megahit_metabinner_{sample}
+# bins (meta.refinement='unrefined')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{sample}*.fa.gz" MEGAHIT-MetaBinner-unclassified-unrefined-{sample}
+rm -rf input_files
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/MEGAHIT-MetaBinner-{sample}*[0-9].fa.gz" MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}
+cd "$wd"
+rm -rf .tmp/gunc_megahit_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_megahit_semibin2"
+when = "config.run_gunc"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_all_levels.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_all_levels.tsv",
+]
+depends_on = ["semibin_megahit"]
+description = "GUNC run of the MEGAHIT SemiBin2 bins and chunks (upstream GUNC_RUN)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.gunc_db}" ]; then
+    echo "gunc: config.gunc_db must point to a local GUNC database when run_gunc=true" 1>&2
+    exit 1
+fi
+run_gunc() {
+    # $1 = input glob pattern, $2 = prefix (output basename)
+    mkdir -p input_files
+    for f in $1; do
+        [ -e "$f" ] || continue
+        ln -sf "$f" input_files/$(basename "$f")
+    done
+    if ls input_files/* >/dev/null 2>&1; then
+        ls input_files/* > input_files.txt
+        gunc \\
+            run \\
+            --input_file input_files.txt \\
+            --db_file "$wd/{config.gunc_db}" \\
+            --threads {threads}
+        # gunc names the tables after the database file; rename to the group
+        # prefix so raw/<prefix>/ holds exactly one group's tables
+        mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
+        mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
+    else
+        # zero-bin group: emit the empty artifacts so the declared-output
+        # contract holds
+        echo "gunc: no bins matched for {sample} ($2)" 1>&2
+        touch "$2_maxCSS_level.tsv"
+        touch "$2_all_levels.tsv"
+    fi
+    mkdir -p "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2"
+    mv "$2_maxCSS_level.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+    mv "$2_all_levels.tsv" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/raw/$2/"
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/raw
+mkdir -p .tmp/gunc_megahit_semibin2_{sample} && cd .tmp/gunc_megahit_semibin2_{sample}
+# bins (meta.refinement='unrefined')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}*.fa.gz" MEGAHIT-SemiBin2-unclassified-unrefined-{sample}
+rm -rf input_files
+# unbinned chunks (meta.refinement='unrefined_unbinned')
+run_gunc "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/MEGAHIT-SemiBin2-{sample}*[0-9].fa.gz" MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}
+cd "$wd"
+rm -rf .tmp/gunc_megahit_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 4
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "concat_gunc_tsv"
+when = "config.run_gunc"
+input = ["{config.out_dir}/GenomeBinning/QC/GUNC/raw"]
+output = ["{config.out_dir}/GenomeBinning/QC/gunc_summary.tsv"]
+depends_on = [
+    "gunc_spades_metabat2",
+    "gunc_spades_maxbin2",
+    "gunc_spades_concoct",
+    "gunc_spades_comebin",
+    "gunc_spades_metabinner",
+    "gunc_spades_semibin2",
+    "gunc_megahit_metabat2",
+    "gunc_megahit_maxbin2",
+    "gunc_megahit_concoct",
+    "gunc_megahit_comebin",
+    "gunc_megahit_metabinner",
+    "gunc_megahit_semibin2",
+]
+description = "Concatenate all GUNC maxCSS tables (upstream CONCAT_GUNC_TSV, qsv cat rowskey)"
+shell = """
+export QSV_SKIP_FORMAT_CHECK=1
+mkdir -p {config.out_dir}/GenomeBinning/QC
+if ls {config.out_dir}/GenomeBinning/QC/GUNC/raw/*/*maxCSS_level.tsv >/dev/null 2>&1; then
+    qsv cat rowskey --delimiter '\\t' -o gunc_summary.tsv {config.out_dir}/GenomeBinning/QC/GUNC/raw/*/*maxCSS_level.tsv
+else
+    touch gunc_summary.tsv
+fi
+mv gunc_summary.tsv {config.out_dir}/GenomeBinning/QC/
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/qsv.yaml"
+
+
+[[rules]]
+name = "gunc_mergecheckm_spades_metabat2"
+when = "config.run_gunc && config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MetaBAT2-unclassified-unrefined-{sample}/SPAdes-MetaBAT2-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-MetaBAT2-unclassified-unrefined-{sample}/gunc_merge_checkm.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}/gunc_merge_checkm.tsv",
+]
+depends_on = ["gunc_spades_metabat2", "checkm_qa_spades_metabat2"]
+description = "GUNC merge_checkm of the SPAdes MetaBAT2 groups (upstream GUNC_MERGECHECKM)"
+shell = """
+wd=$(pwd)
+run_merge() {
+    # $1 = gunc maxCSS tsv, $2 = checkm qa txt, $3 = publish dir
+    mkdir -p "$3"
+    if [ -s "$1" ] && [ -s "$2" ]; then
+        gunc \\
+            merge_checkm \\
+            -g "$1" \\
+            -c "$2" \\
+            -o .
+        mv gunc_merge_checkm.tsv "$3/"
+    else
+        touch "$3/gunc_merge_checkm.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged
+run_merge "$wd/{input[0]}" "$wd/{input[2]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-MetaBAT2-unclassified-unrefined-{sample}"
+run_merge "$wd/{input[1]}" "$wd/{input[3]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_mergecheckm_spades_maxbin2"
+when = "config.run_gunc && config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MaxBin2-unclassified-unrefined-{sample}/SPAdes-MaxBin2-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-MaxBin2-unclassified-unrefined-{sample}/gunc_merge_checkm.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}/gunc_merge_checkm.tsv",
+]
+depends_on = ["gunc_spades_maxbin2", "checkm_qa_spades_maxbin2"]
+description = "GUNC merge_checkm of the SPAdes MaxBin2 groups (upstream GUNC_MERGECHECKM)"
+shell = """
+wd=$(pwd)
+run_merge() {
+    # $1 = gunc maxCSS tsv, $2 = checkm qa txt, $3 = publish dir
+    mkdir -p "$3"
+    if [ -s "$1" ] && [ -s "$2" ]; then
+        gunc \\
+            merge_checkm \\
+            -g "$1" \\
+            -c "$2" \\
+            -o .
+        mv gunc_merge_checkm.tsv "$3/"
+    else
+        touch "$3/gunc_merge_checkm.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged
+run_merge "$wd/{input[0]}" "$wd/{input[2]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-MaxBin2-unclassified-unrefined-{sample}"
+run_merge "$wd/{input[1]}" "$wd/{input[3]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_mergecheckm_spades_concoct"
+when = "config.run_gunc && config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-CONCOCT-unclassified-unrefined-{sample}/SPAdes-CONCOCT-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-CONCOCT-unclassified-unrefined-{sample}/gunc_merge_checkm.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}/gunc_merge_checkm.tsv",
+]
+depends_on = ["gunc_spades_concoct", "checkm_qa_spades_concoct"]
+description = "GUNC merge_checkm of the SPAdes CONCOCT groups (upstream GUNC_MERGECHECKM)"
+shell = """
+wd=$(pwd)
+run_merge() {
+    # $1 = gunc maxCSS tsv, $2 = checkm qa txt, $3 = publish dir
+    mkdir -p "$3"
+    if [ -s "$1" ] && [ -s "$2" ]; then
+        gunc \\
+            merge_checkm \\
+            -g "$1" \\
+            -c "$2" \\
+            -o .
+        mv gunc_merge_checkm.tsv "$3/"
+    else
+        touch "$3/gunc_merge_checkm.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged
+run_merge "$wd/{input[0]}" "$wd/{input[2]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-CONCOCT-unclassified-unrefined-{sample}"
+run_merge "$wd/{input[1]}" "$wd/{input[3]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_mergecheckm_spades_comebin"
+when = "config.run_gunc && config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-COMEBin-unclassified-unrefined-{sample}/SPAdes-COMEBin-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-COMEBin-unclassified-unrefined-{sample}/gunc_merge_checkm.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}/gunc_merge_checkm.tsv",
+]
+depends_on = ["gunc_spades_comebin", "checkm_qa_spades_comebin"]
+description = "GUNC merge_checkm of the SPAdes COMEBin groups (upstream GUNC_MERGECHECKM)"
+shell = """
+wd=$(pwd)
+run_merge() {
+    # $1 = gunc maxCSS tsv, $2 = checkm qa txt, $3 = publish dir
+    mkdir -p "$3"
+    if [ -s "$1" ] && [ -s "$2" ]; then
+        gunc \\
+            merge_checkm \\
+            -g "$1" \\
+            -c "$2" \\
+            -o .
+        mv gunc_merge_checkm.tsv "$3/"
+    else
+        touch "$3/gunc_merge_checkm.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged
+run_merge "$wd/{input[0]}" "$wd/{input[2]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-COMEBin-unclassified-unrefined-{sample}"
+run_merge "$wd/{input[1]}" "$wd/{input[3]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_mergecheckm_spades_metabinner"
+when = "config.run_gunc && config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MetaBinner-unclassified-unrefined-{sample}/SPAdes-MetaBinner-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-MetaBinner-unclassified-unrefined-{sample}/gunc_merge_checkm.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}/gunc_merge_checkm.tsv",
+]
+depends_on = ["gunc_spades_metabinner", "checkm_qa_spades_metabinner"]
+description = "GUNC merge_checkm of the SPAdes MetaBinner groups (upstream GUNC_MERGECHECKM)"
+shell = """
+wd=$(pwd)
+run_merge() {
+    # $1 = gunc maxCSS tsv, $2 = checkm qa txt, $3 = publish dir
+    mkdir -p "$3"
+    if [ -s "$1" ] && [ -s "$2" ]; then
+        gunc \\
+            merge_checkm \\
+            -g "$1" \\
+            -c "$2" \\
+            -o .
+        mv gunc_merge_checkm.tsv "$3/"
+    else
+        touch "$3/gunc_merge_checkm.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged
+run_merge "$wd/{input[0]}" "$wd/{input[2]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-MetaBinner-unclassified-unrefined-{sample}"
+run_merge "$wd/{input[1]}" "$wd/{input[3]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_mergecheckm_spades_semibin2"
+when = "config.run_gunc && config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-SemiBin2-unclassified-unrefined-{sample}/SPAdes-SemiBin2-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-SemiBin2-unclassified-unrefined-{sample}/gunc_merge_checkm.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}/gunc_merge_checkm.tsv",
+]
+depends_on = ["gunc_spades_semibin2", "checkm_qa_spades_semibin2"]
+description = "GUNC merge_checkm of the SPAdes SemiBin2 groups (upstream GUNC_MERGECHECKM)"
+shell = """
+wd=$(pwd)
+run_merge() {
+    # $1 = gunc maxCSS tsv, $2 = checkm qa txt, $3 = publish dir
+    mkdir -p "$3"
+    if [ -s "$1" ] && [ -s "$2" ]; then
+        gunc \\
+            merge_checkm \\
+            -g "$1" \\
+            -c "$2" \\
+            -o .
+        mv gunc_merge_checkm.tsv "$3/"
+    else
+        touch "$3/gunc_merge_checkm.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged
+run_merge "$wd/{input[0]}" "$wd/{input[2]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-SemiBin2-unclassified-unrefined-{sample}"
+run_merge "$wd/{input[1]}" "$wd/{input[3]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_mergecheckm_megahit_metabat2"
+when = "config.run_gunc && config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}/gunc_merge_checkm.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}/gunc_merge_checkm.tsv",
+]
+depends_on = ["gunc_megahit_metabat2", "checkm_qa_megahit_metabat2"]
+description = "GUNC merge_checkm of the MEGAHIT MetaBAT2 groups (upstream GUNC_MERGECHECKM)"
+shell = """
+wd=$(pwd)
+run_merge() {
+    # $1 = gunc maxCSS tsv, $2 = checkm qa txt, $3 = publish dir
+    mkdir -p "$3"
+    if [ -s "$1" ] && [ -s "$2" ]; then
+        gunc \\
+            merge_checkm \\
+            -g "$1" \\
+            -c "$2" \\
+            -o .
+        mv gunc_merge_checkm.tsv "$3/"
+    else
+        touch "$3/gunc_merge_checkm.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged
+run_merge "$wd/{input[0]}" "$wd/{input[2]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}"
+run_merge "$wd/{input[1]}" "$wd/{input[3]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_mergecheckm_megahit_maxbin2"
+when = "config.run_gunc && config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}/gunc_merge_checkm.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}/gunc_merge_checkm.tsv",
+]
+depends_on = ["gunc_megahit_maxbin2", "checkm_qa_megahit_maxbin2"]
+description = "GUNC merge_checkm of the MEGAHIT MaxBin2 groups (upstream GUNC_MERGECHECKM)"
+shell = """
+wd=$(pwd)
+run_merge() {
+    # $1 = gunc maxCSS tsv, $2 = checkm qa txt, $3 = publish dir
+    mkdir -p "$3"
+    if [ -s "$1" ] && [ -s "$2" ]; then
+        gunc \\
+            merge_checkm \\
+            -g "$1" \\
+            -c "$2" \\
+            -o .
+        mv gunc_merge_checkm.tsv "$3/"
+    else
+        touch "$3/gunc_merge_checkm.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged
+run_merge "$wd/{input[0]}" "$wd/{input[2]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}"
+run_merge "$wd/{input[1]}" "$wd/{input[3]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_mergecheckm_megahit_concoct"
+when = "config.run_gunc && config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}/gunc_merge_checkm.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}/gunc_merge_checkm.tsv",
+]
+depends_on = ["gunc_megahit_concoct", "checkm_qa_megahit_concoct"]
+description = "GUNC merge_checkm of the MEGAHIT CONCOCT groups (upstream GUNC_MERGECHECKM)"
+shell = """
+wd=$(pwd)
+run_merge() {
+    # $1 = gunc maxCSS tsv, $2 = checkm qa txt, $3 = publish dir
+    mkdir -p "$3"
+    if [ -s "$1" ] && [ -s "$2" ]; then
+        gunc \\
+            merge_checkm \\
+            -g "$1" \\
+            -c "$2" \\
+            -o .
+        mv gunc_merge_checkm.tsv "$3/"
+    else
+        touch "$3/gunc_merge_checkm.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged
+run_merge "$wd/{input[0]}" "$wd/{input[2]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}"
+run_merge "$wd/{input[1]}" "$wd/{input[3]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_mergecheckm_megahit_comebin"
+when = "config.run_gunc && config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-COMEBin-unclassified-unrefined-{sample}/MEGAHIT-COMEBin-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-COMEBin-unclassified-unrefined-{sample}/gunc_merge_checkm.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}/gunc_merge_checkm.tsv",
+]
+depends_on = ["gunc_megahit_comebin", "checkm_qa_megahit_comebin"]
+description = "GUNC merge_checkm of the MEGAHIT COMEBin groups (upstream GUNC_MERGECHECKM)"
+shell = """
+wd=$(pwd)
+run_merge() {
+    # $1 = gunc maxCSS tsv, $2 = checkm qa txt, $3 = publish dir
+    mkdir -p "$3"
+    if [ -s "$1" ] && [ -s "$2" ]; then
+        gunc \\
+            merge_checkm \\
+            -g "$1" \\
+            -c "$2" \\
+            -o .
+        mv gunc_merge_checkm.tsv "$3/"
+    else
+        touch "$3/gunc_merge_checkm.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged
+run_merge "$wd/{input[0]}" "$wd/{input[2]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-COMEBin-unclassified-unrefined-{sample}"
+run_merge "$wd/{input[1]}" "$wd/{input[3]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_mergecheckm_megahit_metabinner"
+when = "config.run_gunc && config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}/gunc_merge_checkm.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}/gunc_merge_checkm.tsv",
+]
+depends_on = ["gunc_megahit_metabinner", "checkm_qa_megahit_metabinner"]
+description = "GUNC merge_checkm of the MEGAHIT MetaBinner groups (upstream GUNC_MERGECHECKM)"
+shell = """
+wd=$(pwd)
+run_merge() {
+    # $1 = gunc maxCSS tsv, $2 = checkm qa txt, $3 = publish dir
+    mkdir -p "$3"
+    if [ -s "$1" ] && [ -s "$2" ]; then
+        gunc \\
+            merge_checkm \\
+            -g "$1" \\
+            -c "$2" \\
+            -o .
+        mv gunc_merge_checkm.tsv "$3/"
+    else
+        touch "$3/gunc_merge_checkm.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged
+run_merge "$wd/{input[0]}" "$wd/{input[2]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}"
+run_merge "$wd/{input[1]}" "$wd/{input[3]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "gunc_mergecheckm_megahit_semibin2"
+when = "config.run_gunc && config.run_checkm"
+input = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/raw/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_maxCSS_level.tsv",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_qa.txt",
+    "{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_qa.txt",
+]
+output = [
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}/gunc_merge_checkm.tsv",
+    "{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}/gunc_merge_checkm.tsv",
+]
+depends_on = ["gunc_megahit_semibin2", "checkm_qa_megahit_semibin2"]
+description = "GUNC merge_checkm of the MEGAHIT SemiBin2 groups (upstream GUNC_MERGECHECKM)"
+shell = """
+wd=$(pwd)
+run_merge() {
+    # $1 = gunc maxCSS tsv, $2 = checkm qa txt, $3 = publish dir
+    mkdir -p "$3"
+    if [ -s "$1" ] && [ -s "$2" ]; then
+        gunc \\
+            merge_checkm \\
+            -g "$1" \\
+            -c "$2" \\
+            -o .
+        mv gunc_merge_checkm.tsv "$3/"
+    else
+        touch "$3/gunc_merge_checkm.tsv"
+    fi
+}
+mkdir -p {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged
+run_merge "$wd/{input[0]}" "$wd/{input[2]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}"
+run_merge "$wd/{input[1]}" "$wd/{input[3]}" "$wd/{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}"
+"""
+
+[rules.resources]
+threads = 1
+memory = "4G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/gunc.yaml"
+
+[[rules]]
+name = "concat_gunc_checkm_tsv"
+when = "config.run_gunc && config.run_checkm"
+input = ["{config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged"]
+output = ["{config.out_dir}/GenomeBinning/QC/gunc_checkm_summary.tsv"]
+depends_on = [
+    "gunc_mergecheckm_spades_metabat2",
+    "gunc_mergecheckm_spades_maxbin2",
+    "gunc_mergecheckm_spades_concoct",
+    "gunc_mergecheckm_spades_comebin",
+    "gunc_mergecheckm_spades_metabinner",
+    "gunc_mergecheckm_spades_semibin2",
+    "gunc_mergecheckm_megahit_metabat2",
+    "gunc_mergecheckm_megahit_maxbin2",
+    "gunc_mergecheckm_megahit_concoct",
+    "gunc_mergecheckm_megahit_comebin",
+    "gunc_mergecheckm_megahit_metabinner",
+    "gunc_mergecheckm_megahit_semibin2",
+]
+description = "Concatenate all GUNC merge_checkm tables (upstream CONCAT_GUNC_CHECKM_TSV, qsv cat rowskey)"
+shell = """
+export QSV_SKIP_FORMAT_CHECK=1
+mkdir -p {config.out_dir}/GenomeBinning/QC
+if ls {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/*/gunc_merge_checkm.tsv >/dev/null 2>&1; then
+    qsv cat rowskey --delimiter '\\t' -o gunc_checkm_summary.tsv {config.out_dir}/GenomeBinning/QC/GUNC/checkmmerged/*/gunc_merge_checkm.tsv
+else
+    touch gunc_checkm_summary.tsv
+fi
+mv gunc_checkm_summary.tsv {config.out_dir}/GenomeBinning/QC/
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/qsv.yaml"
+
+

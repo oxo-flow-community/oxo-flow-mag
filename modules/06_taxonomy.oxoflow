@@ -76,6 +76,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins" \
     --bins-glob "SPAdes-MetaBAT2-{sample}*.fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-MetaBAT2-unclassified-unrefined-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_bins.txt \
@@ -85,6 +86,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned" \
     --bins-glob "SPAdes-MetaBAT2-{sample}*[0-9].fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_chunks.txt \
@@ -163,6 +165,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins" \
     --bins-glob "SPAdes-MaxBin2-{sample}*.fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-MaxBin2-unclassified-unrefined-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_bins.txt \
@@ -172,6 +175,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned" \
     --bins-glob "SPAdes-MaxBin2-{sample}*[0-9].fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_chunks.txt \
@@ -250,6 +254,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins" \
     --bins-glob "SPAdes-CONCOCT-{sample}*.fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-CONCOCT-unclassified-unrefined-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_bins.txt \
@@ -259,6 +264,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned" \
     --bins-glob "SPAdes-CONCOCT-{sample}*[0-9].fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_chunks.txt \
@@ -337,6 +343,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins" \
     --bins-glob "SPAdes-COMEBin-{sample}*.fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-COMEBin-unclassified-unrefined-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_bins.txt \
@@ -346,6 +353,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned" \
     --bins-glob "SPAdes-COMEBin-{sample}*[0-9].fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_chunks.txt \
@@ -424,6 +432,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins" \
     --bins-glob "SPAdes-MetaBinner-{sample}*.fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-MetaBinner-unclassified-unrefined-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_bins.txt \
@@ -433,6 +442,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned" \
     --bins-glob "SPAdes-MetaBinner-{sample}*[0-9].fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_chunks.txt \
@@ -511,6 +521,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins" \
     --bins-glob "SPAdes-SemiBin2-{sample}*.fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-SemiBin2-unclassified-unrefined-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_bins.txt \
@@ -520,6 +531,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned" \
     --bins-glob "SPAdes-SemiBin2-{sample}*[0-9].fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_chunks.txt \
@@ -598,6 +610,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/bins" \
     --bins-glob "MEGAHIT-MetaBAT2-{sample}*.fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-MetaBAT2-unclassified-unrefined-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_bins.txt \
@@ -607,6 +620,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned" \
     --bins-glob "MEGAHIT-MetaBAT2-{sample}*[0-9].fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-MetaBAT2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_chunks.txt \
@@ -685,6 +699,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/MaxBin2/bins" \
     --bins-glob "MEGAHIT-MaxBin2-{sample}*.fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-MaxBin2-unclassified-unrefined-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_bins.txt \
@@ -694,6 +709,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/MaxBin2/unbinned" \
     --bins-glob "MEGAHIT-MaxBin2-{sample}*[0-9].fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-MaxBin2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_chunks.txt \
@@ -772,6 +788,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/CONCOCT/bins" \
     --bins-glob "MEGAHIT-CONCOCT-{sample}*.fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-CONCOCT-unclassified-unrefined-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_bins.txt \
@@ -781,6 +798,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/CONCOCT/unbinned" \
     --bins-glob "MEGAHIT-CONCOCT-{sample}*[0-9].fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-CONCOCT-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_chunks.txt \
@@ -859,6 +877,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/COMEBin/bins" \
     --bins-glob "MEGAHIT-COMEBin-{sample}*.fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-COMEBin-unclassified-unrefined-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_bins.txt \
@@ -868,6 +887,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/COMEBin/unbinned" \
     --bins-glob "MEGAHIT-COMEBin-{sample}*[0-9].fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-COMEBin-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_chunks.txt \
@@ -946,6 +966,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBinner/bins" \
     --bins-glob "MEGAHIT-MetaBinner-{sample}*.fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-MetaBinner-unclassified-unrefined-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_bins.txt \
@@ -955,6 +976,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/MetaBinner/unbinned" \
     --bins-glob "MEGAHIT-MetaBinner-{sample}*[0-9].fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-MetaBinner-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_chunks.txt \
@@ -1033,6 +1055,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/SemiBin2/bins" \
     --bins-glob "MEGAHIT-SemiBin2-{sample}*.fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-SemiBin2-unclassified-unrefined-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_bins.txt \
@@ -1042,6 +1065,7 @@ python "$wd/scripts/filter_bins_by_qc.py" \
     --bins-dir "$wd/{config.out_dir}/GenomeBinning/SemiBin2/unbinned" \
     --bins-glob "MEGAHIT-SemiBin2-{sample}*[0-9].fa.gz" \
     --checkm-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_qa.txt" \
+    --checkm2-qa-file "$wd/{config.out_dir}/GenomeBinning/QC/CheckM2/MEGAHIT-SemiBin2-unclassified-unrefined_unbinned-{sample}_checkm2_report.tsv" \
     --min-completeness {config.gtdbtk_min_completeness} \
     --max-contamination {config.gtdbtk_max_contamination} \
     --out-passed passed_chunks.txt \
@@ -1160,14 +1184,16 @@ input = [
     "{config.out_dir}/GenomeBinning/QC/quast_bin_summary.tsv",
     "{config.out_dir}/GenomeBinning/QC/busco_summary.tsv",
     "{config.out_dir}/Taxonomy/GTDB-Tk/gtdbtk_summary.tsv",
+    "{config.out_dir}/Taxonomy/CAT/bat_summary.tsv",
     "{config.out_dir}/GenomeBinning/QC/checkm_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/checkm2_summary.tsv",
     # the helper ships in the repo, not on the env PATH (live: bare
     # combine_tables.py -> command not found; upstream had it in the
     # container's bin/)
     "scripts/combine_tables.py",
 ]
 output = ["{config.out_dir}/GenomeBinning/bin_summary.tsv"]
-depends_on = ["mag_depths_summary", "concat_quast", "concat_busco", "gtdbtk_summary", "concat_checkm_tsv"]
+depends_on = ["mag_depths_summary", "concat_quast", "concat_busco", "gtdbtk_summary", "concat_checkm_tsv", "concat_checkm2_tsv", "catpack_bat_summary"]
 description = "Combine the bin QC and taxonomy tables into one summary (upstream BIN_SUMMARY)"
 shell = """
 args_quast=""
@@ -1176,14 +1202,20 @@ args_busco=""
 [ -s "{input[2]}" ] && args_busco="--busco_summary {input[2]}"
 args_gtdbtk=""
 [ -s "{input[3]}" ] && args_gtdbtk="--gtdbtk_summary {input[3]}"
+args_cat=""
+[ -s "{input[4]}" ] && args_cat="--cat_summary {input[4]}"
 args_checkm=""
-[ -s "{input[4]}" ] && args_checkm="--checkm_summary {input[4]}"
+[ -s "{input[5]}" ] && args_checkm="--checkm_summary {input[5]}"
+args_checkm2=""
+[ -s "{input[6]}" ] && args_checkm2="--checkm2_summary {input[6]}"
 python scripts/combine_tables.py \
     --depths_summary {input[0]} \
     $args_quast \
     $args_busco \
     $args_gtdbtk \
+    $args_cat \
     $args_checkm \
+    $args_checkm2 \
     --out bin_summary.tsv
 mv bin_summary.tsv {config.out_dir}/GenomeBinning/
 """
@@ -1758,6 +1790,46 @@ depends_on = [
     "checkm_lineagewf_megahit_semibin2",
     "checkm_qa_megahit_semibin2",
     "concat_checkm_tsv",
+    "checkm2_spades_metabat2",
+    "checkm2_spades_maxbin2",
+    "checkm2_spades_concoct",
+    "checkm2_spades_comebin",
+    "checkm2_spades_metabinner",
+    "checkm2_spades_semibin2",
+    "checkm2_megahit_metabat2",
+    "checkm2_megahit_maxbin2",
+    "checkm2_megahit_concoct",
+    "checkm2_megahit_comebin",
+    "checkm2_megahit_metabinner",
+    "checkm2_megahit_semibin2",
+    "gunc_spades_metabat2",
+    "gunc_spades_maxbin2",
+    "gunc_spades_concoct",
+    "gunc_spades_comebin",
+    "gunc_spades_metabinner",
+    "gunc_spades_semibin2",
+    "gunc_megahit_metabat2",
+    "gunc_megahit_maxbin2",
+    "gunc_megahit_concoct",
+    "gunc_megahit_comebin",
+    "gunc_megahit_metabinner",
+    "gunc_megahit_semibin2",
+    "gunc_mergecheckm_spades_metabat2",
+    "gunc_mergecheckm_spades_maxbin2",
+    "gunc_mergecheckm_spades_concoct",
+    "gunc_mergecheckm_spades_comebin",
+    "gunc_mergecheckm_spades_metabinner",
+    "gunc_mergecheckm_spades_semibin2",
+    "gunc_mergecheckm_megahit_metabat2",
+    "gunc_mergecheckm_megahit_maxbin2",
+    "gunc_mergecheckm_megahit_concoct",
+    "gunc_mergecheckm_megahit_comebin",
+    "gunc_mergecheckm_megahit_metabinner",
+    "gunc_mergecheckm_megahit_semibin2",
+    "concat_checkm2_tsv",
+    "concat_gunc_tsv",
+    "concat_gunc_checkm_tsv",
+    "catpack_bat_summary",
     "concat_busco",
     "mag_depths_summary",
     "concat_quast",

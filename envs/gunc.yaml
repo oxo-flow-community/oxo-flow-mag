@@ -1,0 +1,11 @@
+---
+# Environment for GUNC — pinned exactly to the upstream
+# nf-core/mag 5.5.0 nf-core/gunc/run + mergecheckm module environment
+# (modules/nf-core/gunc/run/environment.yml); used by the --run_gunc
+# branch. The database is user-provided (config.gunc_db).
+name: gunc
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::gunc=1.1.0

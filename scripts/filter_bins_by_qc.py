@@ -16,8 +16,8 @@ Semantics ported exactly:
     contamination <= max; the rest are "discarded"
   - busco bin names in the batch summary are the decompressed file names
     (the nf-core busco module gunzips each input), i.e. bin name minus '.gz'
-  - CheckM (and CheckM2) strip the extension from the bin name, so the
-    upstream filter appends '.fa' to the checkm 'Bin Id' column before
+  - CheckM and CheckM2 strip the extension from the bin name, so the
+    upstream filter appends '.fa' to the checkm 'Bin Id' / checkm2 'Name' column before
     matching the bin files
 
 Outputs: basenames WITH '.gz' (the real bin file names), one per line.
@@ -42,6 +42,31 @@ def read_busco(path, metrics):
             except ValueError:
                 continue
             # a negative value means the tool could not assess the bin: drop the reading
+            if completeness < 0 or contamination < 0:
+                continue
+            metrics.setdefault(bin_name, []).append([completeness, contamination])
+
+
+def read_checkm2(path, metrics):
+    # the checkm2 predict output ({prefix}_checkm2_report.tsv) has a header
+    # with Name/Completeness/Contamination; absent file means the branch did
+    # not run (run_checkm2=false): no-op
+    if not path or not os.path.exists(path):
+        return
+    with open(path) as fh:
+        header = fh.readline().rstrip("\n").split("\t")
+        cols = {name: i for i, name in enumerate(header)}
+        for line in fh:
+            row = line.rstrip("\n").split("\t")
+            if len(row) < len(header):
+                continue
+            # checkm2 strips .gz and .fa from the bin name (upstream appends '.fa')
+            bin_name = row[cols["Name"]] + ".fa"
+            try:
+                completeness = float(row[cols["Completeness"]])
+                contamination = float(row[cols["Contamination"]])
+            except ValueError:
+                continue
             if completeness < 0 or contamination < 0:
                 continue
             metrics.setdefault(bin_name, []).append([completeness, contamination])
@@ -77,6 +102,8 @@ def main():
                     help="BUSCO batch_summary.txt of the group")
     ap.add_argument("--checkm-qa-file", default=None,
                     help="optional CheckM qa output ({prefix}_qa.txt) of the group")
+    ap.add_argument("--checkm2-qa-file", default=None,
+                    help="optional CheckM2 report ({prefix}_checkm2_report.tsv) of the group")
     ap.add_argument("--bins-dir", required=True,
                     help="directory containing the bin fasta files")
     ap.add_argument("--bins-glob", required=True,
@@ -92,6 +119,7 @@ def main():
     metrics = {}
     read_busco(args.batch_summary, metrics)
     read_checkm(args.checkm_qa_file, metrics)
+    read_checkm2(args.checkm2_qa_file, metrics)
 
     # the group's bin fasta files (python glob: zero matches -> empty lists,
     # mirroring the upstream empty-group behaviour)

@@ -1,0 +1,165 @@
+[workflow]
+name = "10_virus_identification"
+description = "nf-core/mag 5.5.0 10_virus_identification fragment"
+# ---------------------------------------------------------------------------
+# oxo-flow port of nf-core/mag 5.5.0 virus identification
+# (upstream subworkflows/local/virus_identification/main.nf +
+# GENOMAD_ENDTOEND). Gated on config.run_virus_identification; see
+# main.oxoflow for the database contract.
+
+# ---------------------------------------------------------------------------
+# Virus identification (upstream subworkflows/local/virus_identification/main.nf
+# + GENOMAD_ENDTOEND). Needs a local geNomad database (config.genomad_db =
+# database .tar.gz archive or unpacked directory with markers/ and
+# trained_models/; upstream --genomad_db). Default args --cleanup
+# --min-score 0.7 --splits 1 are baked in.
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "genomad_db_preparation"
+when = "config.run_virus_identification"
+input = ["{config.genomad_db}"]
+output = ["intermediates/genomad_db/db"]
+description = "Unpack or copy the local geNomad database (upstream GENOMAD_UNTAR / fromPath)"
+shell = """
+if [ -z "{input[0]}" ]; then
+    echo "genomad_db is empty: set config.genomad_db to the local geNomad database archive (.tar.gz) or unpacked directory, or run with run_virus_identification=false" 1>&2
+    exit 1
+fi
+mkdir -p intermediates/genomad_db/db
+if [ -d "{input[0]}" ]; then
+    # user passed a directory instead of a tar.gz
+    cp -r "{input[0]}"/. intermediates/genomad_db/db/
+else
+    tar -xzf "{input[0]}" -C intermediates/genomad_db/db
+fi
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/genomad.yaml"
+
+[[rules]]
+name = "genomad_spades"
+when = "config.run_virus_identification"
+input = [
+    "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
+    "intermediates/genomad_db/db",
+]
+output = [
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus_summary.tsv",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus.fna.gz",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus_proteins.faa.gz",
+]
+depends_on = ["gunzip_spades", "genomad_db_preparation"]
+description = "geNomad end-to-end virus identification of the SPAdes assembly (upstream GENOMAD_ENDTOEND)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.genomad_db}" ]; then
+    echo "genomad: config.genomad_db must point to a local geNomad database when run_virus_identification=true" 1>&2
+    exit 1
+fi
+db_path=$(find -L intermediates/genomad_db -maxdepth 3 -type d -name markers -exec dirname {} \\; | head -1)
+if [ -z "$db_path" ]; then
+    echo "genomad: no database found under intermediates/genomad_db (set config.genomad_db to a geNomad database archive or directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/VirusIdentification/geNomad/{sample}
+mkdir -p .tmp/genomad_spades_{sample} && cd .tmp/genomad_spades_{sample}
+ln -sf "$wd/{input[0]}" ./
+genomad \\
+    end-to-end \\
+    SPAdes-{sample}.scaffolds.fa \\
+    ./ \\
+    "$wd/$db_path" \\
+    --threads {threads} \\
+    --cleanup \\
+    --min-score 0.7 \\
+    --splits 1
+gzip ./**/*.fna
+gzip ./**/*.faa
+# upstream publishes the whole per-sample dir (everything but versions.yml)
+mv SPAdes-{sample}.scaffolds_* "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/" 2>/dev/null || {
+    # degenerate empty results: make the declared-output contract hold
+    echo "genomad: no results for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus_summary.tsv"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus.fna.gz"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus_proteins.faa.gz"
+}
+cd "$wd"
+rm -rf .tmp/genomad_spades_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "32G"
+time_limit = "16h"
+
+[rules.environment]
+conda = "envs/genomad.yaml"
+
+[[rules]]
+name = "genomad_megahit"
+when = "config.run_virus_identification"
+input = [
+    "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa",
+    "intermediates/genomad_db/db",
+]
+output = [
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus_summary.tsv",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus.fna.gz",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus_proteins.faa.gz",
+]
+depends_on = ["gunzip_megahit", "genomad_db_preparation"]
+description = "geNomad end-to-end virus identification of the MEGAHIT assembly (upstream GENOMAD_ENDTOEND)"
+shell = """
+wd=$(pwd)
+if [ -z "{config.genomad_db}" ]; then
+    echo "genomad: config.genomad_db must point to a local geNomad database when run_virus_identification=true" 1>&2
+    exit 1
+fi
+db_path=$(find -L intermediates/genomad_db -maxdepth 3 -type d -name markers -exec dirname {} \\; | head -1)
+if [ -z "$db_path" ]; then
+    echo "genomad: no database found under intermediates/genomad_db (set config.genomad_db to a geNomad database archive or directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/VirusIdentification/geNomad/{sample}
+mkdir -p .tmp/genomad_megahit_{sample} && cd .tmp/genomad_megahit_{sample}
+ln -sf "$wd/{input[0]}" ./
+genomad \\
+    end-to-end \\
+    MEGAHIT-{sample}.contigs.fa \\
+    ./ \\
+    "$wd/$db_path" \\
+    --threads {threads} \\
+    --cleanup \\
+    --min-score 0.7 \\
+    --splits 1
+gzip ./**/*.fna
+gzip ./**/*.faa
+# upstream publishes the whole per-sample dir (everything but versions.yml)
+mv MEGAHIT-{sample}.contigs_* "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/" 2>/dev/null || {
+    # degenerate empty results: make the declared-output contract hold
+    echo "genomad: no results for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus_summary.tsv"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus.fna.gz"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus_proteins.faa.gz"
+}
+cd "$wd"
+rm -rf .tmp/genomad_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "32G"
+time_limit = "16h"
+
+[rules.environment]
+conda = "envs/genomad.yaml"
+
+

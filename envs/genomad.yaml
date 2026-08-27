@@ -1,0 +1,12 @@
+---
+# Environment for geNomad — pinned exactly to the upstream
+# nf-core/mag 5.5.0 nf-core/genomad/endtoend module environment
+# (modules/nf-core/genomad/endtoend/environment.yml); used by the
+# --run_virus_identification branch. The database is user-provided
+# (config.genomad_db).
+name: genomad
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::genomad=1.11.2
