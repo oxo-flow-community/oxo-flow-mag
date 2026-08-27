@@ -1,0 +1,14 @@
+---
+# Environment for CAT_pack — pinned exactly to the upstream
+# nf-core/mag 5.5.0 nf-core/catpack/bins module environment
+# (modules/nf-core/catpack/bins/environment.yml); used by the --cat_db
+# branch. The database is user-provided (config.cat_db). gzip is pinned
+# additionally because the oxo-flow port has no container layer and the
+# bins column decompresses the bins before classification.
+name: catpack
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::cat=6.0.1
+  - conda-forge::gzip=1.14

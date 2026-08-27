@@ -1,0 +1,1791 @@
+[workflow]
+name = "09_catpack"
+description = "nf-core/mag 5.5.0 09_catpack fragment"
+# ---------------------------------------------------------------------------
+# oxo-flow port of nf-core/mag 5.5.0 CAT/BAT/RAT bin classification
+# (upstream subworkflows/local/catpack/main.nf, bins column). Gated on
+# config.cat_db; see main.oxoflow for the database contract.
+
+# ---------------------------------------------------------------------------
+# CAT/BAT/RAT bin classification (upstream subworkflows/local/catpack/main.nf,
+# bins column: CATPACK_BINS -> CATPACK_ADDNAMES_BINS ->
+# CATPACK_SUMMARISE_BINS -> bat_summary.tsv). Needs a local CAT database
+# (config.cat_db = CAT_prepare .tar.gz archive or unpacked directory with
+# db/ and tax/ subdirectories; upstream --cat_db). The contigs column
+# (CATPACK_UNBINS, --cat_classify_unbinned default false) is not ported.
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "cat_db_preparation"
+when = "config.cat_db"
+input = ["{config.cat_db}"]
+output = ["intermediates/cat_db/db"]
+description = "Unpack or copy the local CAT database (upstream CATPACK_DB_UNTAR / fromPath)"
+shell = """
+if [ -z "{input[0]}" ]; then
+    echo "cat_db is empty: set config.cat_db to the local CAT_prepare archive (.tar.gz) or unpacked directory, or run without it" 1>&2
+    exit 1
+fi
+mkdir -p intermediates/cat_db/db
+if [ -d "{input[0]}" ]; then
+    # user passed a directory instead of a tar.gz
+    cp -r "{input[0]}"/. intermediates/cat_db/db/
+else
+    tar -xzf "{input[0]}" -C intermediates/cat_db/db
+fi
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_bins_spades_metabat2"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/SPAdes-MetaBAT2-{sample}-bins.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/SPAdes-MetaBAT2-{sample}-bins.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/SPAdes-MetaBAT2-{sample}-bins.log",
+]
+depends_on = ["metabat2_spades", "cat_db_preparation"]
+description = "CAT_pack bins classification of the SPAdes MetaBAT2 bins (upstream CATPACK_BINS)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_bins_spades_metabat2_{sample} && cd .tmp/catpack_bins_spades_metabat2_{sample}
+mkdir -p input_bins
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_bins/$(basename "$f" .gz)
+done
+if ls input_bins/* >/dev/null 2>&1; then
+    CAT_pack bins \\
+        -n {threads} \\
+        -b input_bins/ \\
+        -d "$wd/$db_dir" \\
+        -t "$wd/$tax_dir" \\
+        -s .fa \\
+        -o SPAdes-MetaBAT2-{sample}-bins
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins"
+    mv SPAdes-MetaBAT2-{sample}-bins.* "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/" 2>/dev/null || true
+else
+    # zero-bin group: emit the empty artifacts so the declared-output
+    # contract holds
+    echo "catpack: no bins matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/SPAdes-MetaBAT2-{sample}-bins.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/SPAdes-MetaBAT2-{sample}-bins.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/SPAdes-MetaBAT2-{sample}-bins.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_bins_spades_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_addnames_spades_metabat2"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/SPAdes-MetaBAT2-{sample}-bins.bin2classification.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/SPAdes-MetaBAT2-{sample}-bins_bin2classification.names.txt",
+]
+depends_on = ["catpack_bins_spades_metabat2"]
+description = "CAT_pack add_names of the SPAdes MetaBAT2 classification (upstream CATPACK_ADDNAMES_BINS, --only_official unless cat_allow_unofficial_lineages)"
+shell = """
+wd=$(pwd)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain a tax/ directory (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins
+mkdir -p .tmp/catpack_addnames_spades_metabat2_{sample} && cd .tmp/catpack_addnames_spades_metabat2_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    only_official="--only_official"
+    if [ "{config.cat_allow_unofficial_lineages}" = "true" ]; then
+        only_official=""
+    fi
+    CAT_pack add_names \\
+        $only_official \\
+        -i "$wd/{input[0]}" \\
+        -t "$wd/$tax_dir" \\
+        -o SPAdes-MetaBAT2-{sample}-bins_bin2classification.names.txt
+    mv SPAdes-MetaBAT2-{sample}-bins_bin2classification.names.txt "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/SPAdes-MetaBAT2-{sample}-bins_bin2classification.names.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_addnames_spades_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_summarise_spades_metabat2"
+when = "config.cat_db && !config.cat_allow_unofficial_lineages"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/SPAdes-MetaBAT2-{sample}-bins_bin2classification.names.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/SPAdes-MetaBAT2-{sample}-bins_summary.txt",
+]
+depends_on = ["catpack_addnames_spades_metabat2"]
+description = "CAT_pack summarise of the SPAdes MetaBAT2 names (upstream CATPACK_SUMMARISE_BINS, only when cat_allow_unofficial_lineages=false)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins
+mkdir -p .tmp/catpack_summarise_spades_metabat2_{sample} && cd .tmp/catpack_summarise_spades_metabat2_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    CAT_pack summarise \\
+        -i "$wd/{input[0]}" \\
+        -o SPAdes-MetaBAT2-{sample}-bins_summary.txt
+    mv SPAdes-MetaBAT2-{sample}-bins_summary.txt "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/bins/SPAdes-MetaBAT2-{sample}-bins_summary.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_summarise_spades_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_bins_spades_maxbin2"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/SPAdes-MaxBin2-{sample}-bins.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/SPAdes-MaxBin2-{sample}-bins.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/SPAdes-MaxBin2-{sample}-bins.log",
+]
+depends_on = ["maxbin2_spades", "cat_db_preparation"]
+description = "CAT_pack bins classification of the SPAdes MaxBin2 bins (upstream CATPACK_BINS)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_bins_spades_maxbin2_{sample} && cd .tmp/catpack_bins_spades_maxbin2_{sample}
+mkdir -p input_bins
+for f in "$wd"/{config.out_dir}/GenomeBinning/MaxBin2/bins/SPAdes-MaxBin2-{sample}*.fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_bins/$(basename "$f" .gz)
+done
+if ls input_bins/* >/dev/null 2>&1; then
+    CAT_pack bins \\
+        -n {threads} \\
+        -b input_bins/ \\
+        -d "$wd/$db_dir" \\
+        -t "$wd/$tax_dir" \\
+        -s .fa \\
+        -o SPAdes-MaxBin2-{sample}-bins
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins"
+    mv SPAdes-MaxBin2-{sample}-bins.* "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/" 2>/dev/null || true
+else
+    # zero-bin group: emit the empty artifacts so the declared-output
+    # contract holds
+    echo "catpack: no bins matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/SPAdes-MaxBin2-{sample}-bins.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/SPAdes-MaxBin2-{sample}-bins.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/SPAdes-MaxBin2-{sample}-bins.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_bins_spades_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_addnames_spades_maxbin2"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/SPAdes-MaxBin2-{sample}-bins.bin2classification.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/SPAdes-MaxBin2-{sample}-bins_bin2classification.names.txt",
+]
+depends_on = ["catpack_bins_spades_maxbin2"]
+description = "CAT_pack add_names of the SPAdes MaxBin2 classification (upstream CATPACK_ADDNAMES_BINS, --only_official unless cat_allow_unofficial_lineages)"
+shell = """
+wd=$(pwd)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain a tax/ directory (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins
+mkdir -p .tmp/catpack_addnames_spades_maxbin2_{sample} && cd .tmp/catpack_addnames_spades_maxbin2_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    only_official="--only_official"
+    if [ "{config.cat_allow_unofficial_lineages}" = "true" ]; then
+        only_official=""
+    fi
+    CAT_pack add_names \\
+        $only_official \\
+        -i "$wd/{input[0]}" \\
+        -t "$wd/$tax_dir" \\
+        -o SPAdes-MaxBin2-{sample}-bins_bin2classification.names.txt
+    mv SPAdes-MaxBin2-{sample}-bins_bin2classification.names.txt "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/SPAdes-MaxBin2-{sample}-bins_bin2classification.names.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_addnames_spades_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_summarise_spades_maxbin2"
+when = "config.cat_db && !config.cat_allow_unofficial_lineages"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/SPAdes-MaxBin2-{sample}-bins_bin2classification.names.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/SPAdes-MaxBin2-{sample}-bins_summary.txt",
+]
+depends_on = ["catpack_addnames_spades_maxbin2"]
+description = "CAT_pack summarise of the SPAdes MaxBin2 names (upstream CATPACK_SUMMARISE_BINS, only when cat_allow_unofficial_lineages=false)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins
+mkdir -p .tmp/catpack_summarise_spades_maxbin2_{sample} && cd .tmp/catpack_summarise_spades_maxbin2_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    CAT_pack summarise \\
+        -i "$wd/{input[0]}" \\
+        -o SPAdes-MaxBin2-{sample}-bins_summary.txt
+    mv SPAdes-MaxBin2-{sample}-bins_summary.txt "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/bins/SPAdes-MaxBin2-{sample}-bins_summary.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_summarise_spades_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_bins_spades_concoct"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/SPAdes-CONCOCT-{sample}-bins.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/SPAdes-CONCOCT-{sample}-bins.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/SPAdes-CONCOCT-{sample}-bins.log",
+]
+depends_on = ["concoct_extract_spades", "cat_db_preparation"]
+description = "CAT_pack bins classification of the SPAdes CONCOCT bins (upstream CATPACK_BINS)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_bins_spades_concoct_{sample} && cd .tmp/catpack_bins_spades_concoct_{sample}
+mkdir -p input_bins
+for f in "$wd"/{config.out_dir}/GenomeBinning/CONCOCT/bins/SPAdes-CONCOCT-{sample}*.fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_bins/$(basename "$f" .gz)
+done
+if ls input_bins/* >/dev/null 2>&1; then
+    CAT_pack bins \\
+        -n {threads} \\
+        -b input_bins/ \\
+        -d "$wd/$db_dir" \\
+        -t "$wd/$tax_dir" \\
+        -s .fa \\
+        -o SPAdes-CONCOCT-{sample}-bins
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins"
+    mv SPAdes-CONCOCT-{sample}-bins.* "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/" 2>/dev/null || true
+else
+    # zero-bin group: emit the empty artifacts so the declared-output
+    # contract holds
+    echo "catpack: no bins matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/SPAdes-CONCOCT-{sample}-bins.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/SPAdes-CONCOCT-{sample}-bins.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/SPAdes-CONCOCT-{sample}-bins.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_bins_spades_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_addnames_spades_concoct"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/SPAdes-CONCOCT-{sample}-bins.bin2classification.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/SPAdes-CONCOCT-{sample}-bins_bin2classification.names.txt",
+]
+depends_on = ["catpack_bins_spades_concoct"]
+description = "CAT_pack add_names of the SPAdes CONCOCT classification (upstream CATPACK_ADDNAMES_BINS, --only_official unless cat_allow_unofficial_lineages)"
+shell = """
+wd=$(pwd)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain a tax/ directory (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins
+mkdir -p .tmp/catpack_addnames_spades_concoct_{sample} && cd .tmp/catpack_addnames_spades_concoct_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    only_official="--only_official"
+    if [ "{config.cat_allow_unofficial_lineages}" = "true" ]; then
+        only_official=""
+    fi
+    CAT_pack add_names \\
+        $only_official \\
+        -i "$wd/{input[0]}" \\
+        -t "$wd/$tax_dir" \\
+        -o SPAdes-CONCOCT-{sample}-bins_bin2classification.names.txt
+    mv SPAdes-CONCOCT-{sample}-bins_bin2classification.names.txt "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/SPAdes-CONCOCT-{sample}-bins_bin2classification.names.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_addnames_spades_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_summarise_spades_concoct"
+when = "config.cat_db && !config.cat_allow_unofficial_lineages"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/SPAdes-CONCOCT-{sample}-bins_bin2classification.names.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/SPAdes-CONCOCT-{sample}-bins_summary.txt",
+]
+depends_on = ["catpack_addnames_spades_concoct"]
+description = "CAT_pack summarise of the SPAdes CONCOCT names (upstream CATPACK_SUMMARISE_BINS, only when cat_allow_unofficial_lineages=false)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins
+mkdir -p .tmp/catpack_summarise_spades_concoct_{sample} && cd .tmp/catpack_summarise_spades_concoct_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    CAT_pack summarise \\
+        -i "$wd/{input[0]}" \\
+        -o SPAdes-CONCOCT-{sample}-bins_summary.txt
+    mv SPAdes-CONCOCT-{sample}-bins_summary.txt "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/bins/SPAdes-CONCOCT-{sample}-bins_summary.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_summarise_spades_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_bins_spades_comebin"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/SPAdes-COMEBin-{sample}-bins.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/SPAdes-COMEBin-{sample}-bins.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/SPAdes-COMEBin-{sample}-bins.log",
+]
+depends_on = ["comebin_spades", "cat_db_preparation"]
+description = "CAT_pack bins classification of the SPAdes COMEBin bins (upstream CATPACK_BINS)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_bins_spades_comebin_{sample} && cd .tmp/catpack_bins_spades_comebin_{sample}
+mkdir -p input_bins
+for f in "$wd"/{config.out_dir}/GenomeBinning/COMEBin/bins/SPAdes-COMEBin-{sample}*.fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_bins/$(basename "$f" .gz)
+done
+if ls input_bins/* >/dev/null 2>&1; then
+    CAT_pack bins \\
+        -n {threads} \\
+        -b input_bins/ \\
+        -d "$wd/$db_dir" \\
+        -t "$wd/$tax_dir" \\
+        -s .fa \\
+        -o SPAdes-COMEBin-{sample}-bins
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins"
+    mv SPAdes-COMEBin-{sample}-bins.* "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/" 2>/dev/null || true
+else
+    # zero-bin group: emit the empty artifacts so the declared-output
+    # contract holds
+    echo "catpack: no bins matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/SPAdes-COMEBin-{sample}-bins.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/SPAdes-COMEBin-{sample}-bins.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/SPAdes-COMEBin-{sample}-bins.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_bins_spades_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_addnames_spades_comebin"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/SPAdes-COMEBin-{sample}-bins.bin2classification.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/SPAdes-COMEBin-{sample}-bins_bin2classification.names.txt",
+]
+depends_on = ["catpack_bins_spades_comebin"]
+description = "CAT_pack add_names of the SPAdes COMEBin classification (upstream CATPACK_ADDNAMES_BINS, --only_official unless cat_allow_unofficial_lineages)"
+shell = """
+wd=$(pwd)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain a tax/ directory (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins
+mkdir -p .tmp/catpack_addnames_spades_comebin_{sample} && cd .tmp/catpack_addnames_spades_comebin_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    only_official="--only_official"
+    if [ "{config.cat_allow_unofficial_lineages}" = "true" ]; then
+        only_official=""
+    fi
+    CAT_pack add_names \\
+        $only_official \\
+        -i "$wd/{input[0]}" \\
+        -t "$wd/$tax_dir" \\
+        -o SPAdes-COMEBin-{sample}-bins_bin2classification.names.txt
+    mv SPAdes-COMEBin-{sample}-bins_bin2classification.names.txt "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/SPAdes-COMEBin-{sample}-bins_bin2classification.names.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_addnames_spades_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_summarise_spades_comebin"
+when = "config.cat_db && !config.cat_allow_unofficial_lineages"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/SPAdes-COMEBin-{sample}-bins_bin2classification.names.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/SPAdes-COMEBin-{sample}-bins_summary.txt",
+]
+depends_on = ["catpack_addnames_spades_comebin"]
+description = "CAT_pack summarise of the SPAdes COMEBin names (upstream CATPACK_SUMMARISE_BINS, only when cat_allow_unofficial_lineages=false)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins
+mkdir -p .tmp/catpack_summarise_spades_comebin_{sample} && cd .tmp/catpack_summarise_spades_comebin_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    CAT_pack summarise \\
+        -i "$wd/{input[0]}" \\
+        -o SPAdes-COMEBin-{sample}-bins_summary.txt
+    mv SPAdes-COMEBin-{sample}-bins_summary.txt "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/bins/SPAdes-COMEBin-{sample}-bins_summary.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_summarise_spades_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_bins_spades_metabinner"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/SPAdes-MetaBinner-{sample}-bins.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/SPAdes-MetaBinner-{sample}-bins.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/SPAdes-MetaBinner-{sample}-bins.log",
+]
+depends_on = ["metabinner_bins_spades", "cat_db_preparation"]
+description = "CAT_pack bins classification of the SPAdes MetaBinner bins (upstream CATPACK_BINS)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_bins_spades_metabinner_{sample} && cd .tmp/catpack_bins_spades_metabinner_{sample}
+mkdir -p input_bins
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBinner/bins/SPAdes-MetaBinner-{sample}*.fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_bins/$(basename "$f" .gz)
+done
+if ls input_bins/* >/dev/null 2>&1; then
+    CAT_pack bins \\
+        -n {threads} \\
+        -b input_bins/ \\
+        -d "$wd/$db_dir" \\
+        -t "$wd/$tax_dir" \\
+        -s .fa \\
+        -o SPAdes-MetaBinner-{sample}-bins
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins"
+    mv SPAdes-MetaBinner-{sample}-bins.* "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/" 2>/dev/null || true
+else
+    # zero-bin group: emit the empty artifacts so the declared-output
+    # contract holds
+    echo "catpack: no bins matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/SPAdes-MetaBinner-{sample}-bins.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/SPAdes-MetaBinner-{sample}-bins.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/SPAdes-MetaBinner-{sample}-bins.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_bins_spades_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_addnames_spades_metabinner"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/SPAdes-MetaBinner-{sample}-bins.bin2classification.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/SPAdes-MetaBinner-{sample}-bins_bin2classification.names.txt",
+]
+depends_on = ["catpack_bins_spades_metabinner"]
+description = "CAT_pack add_names of the SPAdes MetaBinner classification (upstream CATPACK_ADDNAMES_BINS, --only_official unless cat_allow_unofficial_lineages)"
+shell = """
+wd=$(pwd)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain a tax/ directory (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins
+mkdir -p .tmp/catpack_addnames_spades_metabinner_{sample} && cd .tmp/catpack_addnames_spades_metabinner_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    only_official="--only_official"
+    if [ "{config.cat_allow_unofficial_lineages}" = "true" ]; then
+        only_official=""
+    fi
+    CAT_pack add_names \\
+        $only_official \\
+        -i "$wd/{input[0]}" \\
+        -t "$wd/$tax_dir" \\
+        -o SPAdes-MetaBinner-{sample}-bins_bin2classification.names.txt
+    mv SPAdes-MetaBinner-{sample}-bins_bin2classification.names.txt "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/SPAdes-MetaBinner-{sample}-bins_bin2classification.names.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_addnames_spades_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_summarise_spades_metabinner"
+when = "config.cat_db && !config.cat_allow_unofficial_lineages"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/SPAdes-MetaBinner-{sample}-bins_bin2classification.names.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/SPAdes-MetaBinner-{sample}-bins_summary.txt",
+]
+depends_on = ["catpack_addnames_spades_metabinner"]
+description = "CAT_pack summarise of the SPAdes MetaBinner names (upstream CATPACK_SUMMARISE_BINS, only when cat_allow_unofficial_lineages=false)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins
+mkdir -p .tmp/catpack_summarise_spades_metabinner_{sample} && cd .tmp/catpack_summarise_spades_metabinner_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    CAT_pack summarise \\
+        -i "$wd/{input[0]}" \\
+        -o SPAdes-MetaBinner-{sample}-bins_summary.txt
+    mv SPAdes-MetaBinner-{sample}-bins_summary.txt "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/bins/SPAdes-MetaBinner-{sample}-bins_summary.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_summarise_spades_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_bins_spades_semibin2"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/SPAdes-SemiBin2-{sample}-bins.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/SPAdes-SemiBin2-{sample}-bins.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/SPAdes-SemiBin2-{sample}-bins.log",
+]
+depends_on = ["semibin_spades", "cat_db_preparation"]
+description = "CAT_pack bins classification of the SPAdes SemiBin2 bins (upstream CATPACK_BINS)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_bins_spades_semibin2_{sample} && cd .tmp/catpack_bins_spades_semibin2_{sample}
+mkdir -p input_bins
+for f in "$wd"/{config.out_dir}/GenomeBinning/SemiBin2/bins/SPAdes-SemiBin2-{sample}*.fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_bins/$(basename "$f" .gz)
+done
+if ls input_bins/* >/dev/null 2>&1; then
+    CAT_pack bins \\
+        -n {threads} \\
+        -b input_bins/ \\
+        -d "$wd/$db_dir" \\
+        -t "$wd/$tax_dir" \\
+        -s .fa \\
+        -o SPAdes-SemiBin2-{sample}-bins
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins"
+    mv SPAdes-SemiBin2-{sample}-bins.* "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/" 2>/dev/null || true
+else
+    # zero-bin group: emit the empty artifacts so the declared-output
+    # contract holds
+    echo "catpack: no bins matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/SPAdes-SemiBin2-{sample}-bins.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/SPAdes-SemiBin2-{sample}-bins.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/SPAdes-SemiBin2-{sample}-bins.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_bins_spades_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_addnames_spades_semibin2"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/SPAdes-SemiBin2-{sample}-bins.bin2classification.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/SPAdes-SemiBin2-{sample}-bins_bin2classification.names.txt",
+]
+depends_on = ["catpack_bins_spades_semibin2"]
+description = "CAT_pack add_names of the SPAdes SemiBin2 classification (upstream CATPACK_ADDNAMES_BINS, --only_official unless cat_allow_unofficial_lineages)"
+shell = """
+wd=$(pwd)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain a tax/ directory (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins
+mkdir -p .tmp/catpack_addnames_spades_semibin2_{sample} && cd .tmp/catpack_addnames_spades_semibin2_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    only_official="--only_official"
+    if [ "{config.cat_allow_unofficial_lineages}" = "true" ]; then
+        only_official=""
+    fi
+    CAT_pack add_names \\
+        $only_official \\
+        -i "$wd/{input[0]}" \\
+        -t "$wd/$tax_dir" \\
+        -o SPAdes-SemiBin2-{sample}-bins_bin2classification.names.txt
+    mv SPAdes-SemiBin2-{sample}-bins_bin2classification.names.txt "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/SPAdes-SemiBin2-{sample}-bins_bin2classification.names.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_addnames_spades_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_summarise_spades_semibin2"
+when = "config.cat_db && !config.cat_allow_unofficial_lineages"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/SPAdes-SemiBin2-{sample}-bins_bin2classification.names.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/SPAdes-SemiBin2-{sample}-bins_summary.txt",
+]
+depends_on = ["catpack_addnames_spades_semibin2"]
+description = "CAT_pack summarise of the SPAdes SemiBin2 names (upstream CATPACK_SUMMARISE_BINS, only when cat_allow_unofficial_lineages=false)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins
+mkdir -p .tmp/catpack_summarise_spades_semibin2_{sample} && cd .tmp/catpack_summarise_spades_semibin2_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    CAT_pack summarise \\
+        -i "$wd/{input[0]}" \\
+        -o SPAdes-SemiBin2-{sample}-bins_summary.txt
+    mv SPAdes-SemiBin2-{sample}-bins_summary.txt "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/bins/SPAdes-SemiBin2-{sample}-bins_summary.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_summarise_spades_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_bins_megahit_metabat2"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/MEGAHIT-MetaBAT2-{sample}-bins.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/MEGAHIT-MetaBAT2-{sample}-bins.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/MEGAHIT-MetaBAT2-{sample}-bins.log",
+]
+depends_on = ["metabat2_megahit", "cat_db_preparation"]
+description = "CAT_pack bins classification of the MEGAHIT MetaBAT2 bins (upstream CATPACK_BINS)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_bins_megahit_metabat2_{sample} && cd .tmp/catpack_bins_megahit_metabat2_{sample}
+mkdir -p input_bins
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*.fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_bins/$(basename "$f" .gz)
+done
+if ls input_bins/* >/dev/null 2>&1; then
+    CAT_pack bins \\
+        -n {threads} \\
+        -b input_bins/ \\
+        -d "$wd/$db_dir" \\
+        -t "$wd/$tax_dir" \\
+        -s .fa \\
+        -o MEGAHIT-MetaBAT2-{sample}-bins
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins"
+    mv MEGAHIT-MetaBAT2-{sample}-bins.* "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/" 2>/dev/null || true
+else
+    # zero-bin group: emit the empty artifacts so the declared-output
+    # contract holds
+    echo "catpack: no bins matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/MEGAHIT-MetaBAT2-{sample}-bins.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/MEGAHIT-MetaBAT2-{sample}-bins.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/MEGAHIT-MetaBAT2-{sample}-bins.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_bins_megahit_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_addnames_megahit_metabat2"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/MEGAHIT-MetaBAT2-{sample}-bins.bin2classification.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/MEGAHIT-MetaBAT2-{sample}-bins_bin2classification.names.txt",
+]
+depends_on = ["catpack_bins_megahit_metabat2"]
+description = "CAT_pack add_names of the MEGAHIT MetaBAT2 classification (upstream CATPACK_ADDNAMES_BINS, --only_official unless cat_allow_unofficial_lineages)"
+shell = """
+wd=$(pwd)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain a tax/ directory (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins
+mkdir -p .tmp/catpack_addnames_megahit_metabat2_{sample} && cd .tmp/catpack_addnames_megahit_metabat2_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    only_official="--only_official"
+    if [ "{config.cat_allow_unofficial_lineages}" = "true" ]; then
+        only_official=""
+    fi
+    CAT_pack add_names \\
+        $only_official \\
+        -i "$wd/{input[0]}" \\
+        -t "$wd/$tax_dir" \\
+        -o MEGAHIT-MetaBAT2-{sample}-bins_bin2classification.names.txt
+    mv MEGAHIT-MetaBAT2-{sample}-bins_bin2classification.names.txt "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/MEGAHIT-MetaBAT2-{sample}-bins_bin2classification.names.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_addnames_megahit_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_summarise_megahit_metabat2"
+when = "config.cat_db && !config.cat_allow_unofficial_lineages"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/MEGAHIT-MetaBAT2-{sample}-bins_bin2classification.names.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/MEGAHIT-MetaBAT2-{sample}-bins_summary.txt",
+]
+depends_on = ["catpack_addnames_megahit_metabat2"]
+description = "CAT_pack summarise of the MEGAHIT MetaBAT2 names (upstream CATPACK_SUMMARISE_BINS, only when cat_allow_unofficial_lineages=false)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins
+mkdir -p .tmp/catpack_summarise_megahit_metabat2_{sample} && cd .tmp/catpack_summarise_megahit_metabat2_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    CAT_pack summarise \\
+        -i "$wd/{input[0]}" \\
+        -o MEGAHIT-MetaBAT2-{sample}-bins_summary.txt
+    mv MEGAHIT-MetaBAT2-{sample}-bins_summary.txt "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/bins/MEGAHIT-MetaBAT2-{sample}-bins_summary.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_summarise_megahit_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_bins_megahit_maxbin2"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/bins",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/MEGAHIT-MaxBin2-{sample}-bins.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/MEGAHIT-MaxBin2-{sample}-bins.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/MEGAHIT-MaxBin2-{sample}-bins.log",
+]
+depends_on = ["maxbin2_megahit", "cat_db_preparation"]
+description = "CAT_pack bins classification of the MEGAHIT MaxBin2 bins (upstream CATPACK_BINS)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_bins_megahit_maxbin2_{sample} && cd .tmp/catpack_bins_megahit_maxbin2_{sample}
+mkdir -p input_bins
+for f in "$wd"/{config.out_dir}/GenomeBinning/MaxBin2/bins/MEGAHIT-MaxBin2-{sample}*.fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_bins/$(basename "$f" .gz)
+done
+if ls input_bins/* >/dev/null 2>&1; then
+    CAT_pack bins \\
+        -n {threads} \\
+        -b input_bins/ \\
+        -d "$wd/$db_dir" \\
+        -t "$wd/$tax_dir" \\
+        -s .fa \\
+        -o MEGAHIT-MaxBin2-{sample}-bins
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins"
+    mv MEGAHIT-MaxBin2-{sample}-bins.* "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/" 2>/dev/null || true
+else
+    # zero-bin group: emit the empty artifacts so the declared-output
+    # contract holds
+    echo "catpack: no bins matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/MEGAHIT-MaxBin2-{sample}-bins.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/MEGAHIT-MaxBin2-{sample}-bins.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/MEGAHIT-MaxBin2-{sample}-bins.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_bins_megahit_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_addnames_megahit_maxbin2"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/MEGAHIT-MaxBin2-{sample}-bins.bin2classification.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/MEGAHIT-MaxBin2-{sample}-bins_bin2classification.names.txt",
+]
+depends_on = ["catpack_bins_megahit_maxbin2"]
+description = "CAT_pack add_names of the MEGAHIT MaxBin2 classification (upstream CATPACK_ADDNAMES_BINS, --only_official unless cat_allow_unofficial_lineages)"
+shell = """
+wd=$(pwd)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain a tax/ directory (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins
+mkdir -p .tmp/catpack_addnames_megahit_maxbin2_{sample} && cd .tmp/catpack_addnames_megahit_maxbin2_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    only_official="--only_official"
+    if [ "{config.cat_allow_unofficial_lineages}" = "true" ]; then
+        only_official=""
+    fi
+    CAT_pack add_names \\
+        $only_official \\
+        -i "$wd/{input[0]}" \\
+        -t "$wd/$tax_dir" \\
+        -o MEGAHIT-MaxBin2-{sample}-bins_bin2classification.names.txt
+    mv MEGAHIT-MaxBin2-{sample}-bins_bin2classification.names.txt "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/MEGAHIT-MaxBin2-{sample}-bins_bin2classification.names.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_addnames_megahit_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_summarise_megahit_maxbin2"
+when = "config.cat_db && !config.cat_allow_unofficial_lineages"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/MEGAHIT-MaxBin2-{sample}-bins_bin2classification.names.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/MEGAHIT-MaxBin2-{sample}-bins_summary.txt",
+]
+depends_on = ["catpack_addnames_megahit_maxbin2"]
+description = "CAT_pack summarise of the MEGAHIT MaxBin2 names (upstream CATPACK_SUMMARISE_BINS, only when cat_allow_unofficial_lineages=false)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins
+mkdir -p .tmp/catpack_summarise_megahit_maxbin2_{sample} && cd .tmp/catpack_summarise_megahit_maxbin2_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    CAT_pack summarise \\
+        -i "$wd/{input[0]}" \\
+        -o MEGAHIT-MaxBin2-{sample}-bins_summary.txt
+    mv MEGAHIT-MaxBin2-{sample}-bins_summary.txt "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/bins/MEGAHIT-MaxBin2-{sample}-bins_summary.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_summarise_megahit_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_bins_megahit_concoct"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/bins",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/MEGAHIT-CONCOCT-{sample}-bins.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/MEGAHIT-CONCOCT-{sample}-bins.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/MEGAHIT-CONCOCT-{sample}-bins.log",
+]
+depends_on = ["concoct_extract_megahit", "cat_db_preparation"]
+description = "CAT_pack bins classification of the MEGAHIT CONCOCT bins (upstream CATPACK_BINS)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_bins_megahit_concoct_{sample} && cd .tmp/catpack_bins_megahit_concoct_{sample}
+mkdir -p input_bins
+for f in "$wd"/{config.out_dir}/GenomeBinning/CONCOCT/bins/MEGAHIT-CONCOCT-{sample}*.fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_bins/$(basename "$f" .gz)
+done
+if ls input_bins/* >/dev/null 2>&1; then
+    CAT_pack bins \\
+        -n {threads} \\
+        -b input_bins/ \\
+        -d "$wd/$db_dir" \\
+        -t "$wd/$tax_dir" \\
+        -s .fa \\
+        -o MEGAHIT-CONCOCT-{sample}-bins
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins"
+    mv MEGAHIT-CONCOCT-{sample}-bins.* "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/" 2>/dev/null || true
+else
+    # zero-bin group: emit the empty artifacts so the declared-output
+    # contract holds
+    echo "catpack: no bins matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/MEGAHIT-CONCOCT-{sample}-bins.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/MEGAHIT-CONCOCT-{sample}-bins.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/MEGAHIT-CONCOCT-{sample}-bins.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_bins_megahit_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_addnames_megahit_concoct"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/MEGAHIT-CONCOCT-{sample}-bins.bin2classification.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/MEGAHIT-CONCOCT-{sample}-bins_bin2classification.names.txt",
+]
+depends_on = ["catpack_bins_megahit_concoct"]
+description = "CAT_pack add_names of the MEGAHIT CONCOCT classification (upstream CATPACK_ADDNAMES_BINS, --only_official unless cat_allow_unofficial_lineages)"
+shell = """
+wd=$(pwd)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain a tax/ directory (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins
+mkdir -p .tmp/catpack_addnames_megahit_concoct_{sample} && cd .tmp/catpack_addnames_megahit_concoct_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    only_official="--only_official"
+    if [ "{config.cat_allow_unofficial_lineages}" = "true" ]; then
+        only_official=""
+    fi
+    CAT_pack add_names \\
+        $only_official \\
+        -i "$wd/{input[0]}" \\
+        -t "$wd/$tax_dir" \\
+        -o MEGAHIT-CONCOCT-{sample}-bins_bin2classification.names.txt
+    mv MEGAHIT-CONCOCT-{sample}-bins_bin2classification.names.txt "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/MEGAHIT-CONCOCT-{sample}-bins_bin2classification.names.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_addnames_megahit_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_summarise_megahit_concoct"
+when = "config.cat_db && !config.cat_allow_unofficial_lineages"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/MEGAHIT-CONCOCT-{sample}-bins_bin2classification.names.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/MEGAHIT-CONCOCT-{sample}-bins_summary.txt",
+]
+depends_on = ["catpack_addnames_megahit_concoct"]
+description = "CAT_pack summarise of the MEGAHIT CONCOCT names (upstream CATPACK_SUMMARISE_BINS, only when cat_allow_unofficial_lineages=false)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins
+mkdir -p .tmp/catpack_summarise_megahit_concoct_{sample} && cd .tmp/catpack_summarise_megahit_concoct_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    CAT_pack summarise \\
+        -i "$wd/{input[0]}" \\
+        -o MEGAHIT-CONCOCT-{sample}-bins_summary.txt
+    mv MEGAHIT-CONCOCT-{sample}-bins_summary.txt "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/bins/MEGAHIT-CONCOCT-{sample}-bins_summary.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_summarise_megahit_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_bins_megahit_comebin"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/bins",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/MEGAHIT-COMEBin-{sample}-bins.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/MEGAHIT-COMEBin-{sample}-bins.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/MEGAHIT-COMEBin-{sample}-bins.log",
+]
+depends_on = ["comebin_megahit", "cat_db_preparation"]
+description = "CAT_pack bins classification of the MEGAHIT COMEBin bins (upstream CATPACK_BINS)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_bins_megahit_comebin_{sample} && cd .tmp/catpack_bins_megahit_comebin_{sample}
+mkdir -p input_bins
+for f in "$wd"/{config.out_dir}/GenomeBinning/COMEBin/bins/MEGAHIT-COMEBin-{sample}*.fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_bins/$(basename "$f" .gz)
+done
+if ls input_bins/* >/dev/null 2>&1; then
+    CAT_pack bins \\
+        -n {threads} \\
+        -b input_bins/ \\
+        -d "$wd/$db_dir" \\
+        -t "$wd/$tax_dir" \\
+        -s .fa \\
+        -o MEGAHIT-COMEBin-{sample}-bins
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins"
+    mv MEGAHIT-COMEBin-{sample}-bins.* "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/" 2>/dev/null || true
+else
+    # zero-bin group: emit the empty artifacts so the declared-output
+    # contract holds
+    echo "catpack: no bins matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/MEGAHIT-COMEBin-{sample}-bins.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/MEGAHIT-COMEBin-{sample}-bins.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/MEGAHIT-COMEBin-{sample}-bins.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_bins_megahit_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_addnames_megahit_comebin"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/MEGAHIT-COMEBin-{sample}-bins.bin2classification.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/MEGAHIT-COMEBin-{sample}-bins_bin2classification.names.txt",
+]
+depends_on = ["catpack_bins_megahit_comebin"]
+description = "CAT_pack add_names of the MEGAHIT COMEBin classification (upstream CATPACK_ADDNAMES_BINS, --only_official unless cat_allow_unofficial_lineages)"
+shell = """
+wd=$(pwd)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain a tax/ directory (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins
+mkdir -p .tmp/catpack_addnames_megahit_comebin_{sample} && cd .tmp/catpack_addnames_megahit_comebin_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    only_official="--only_official"
+    if [ "{config.cat_allow_unofficial_lineages}" = "true" ]; then
+        only_official=""
+    fi
+    CAT_pack add_names \\
+        $only_official \\
+        -i "$wd/{input[0]}" \\
+        -t "$wd/$tax_dir" \\
+        -o MEGAHIT-COMEBin-{sample}-bins_bin2classification.names.txt
+    mv MEGAHIT-COMEBin-{sample}-bins_bin2classification.names.txt "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/MEGAHIT-COMEBin-{sample}-bins_bin2classification.names.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_addnames_megahit_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_summarise_megahit_comebin"
+when = "config.cat_db && !config.cat_allow_unofficial_lineages"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/MEGAHIT-COMEBin-{sample}-bins_bin2classification.names.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/MEGAHIT-COMEBin-{sample}-bins_summary.txt",
+]
+depends_on = ["catpack_addnames_megahit_comebin"]
+description = "CAT_pack summarise of the MEGAHIT COMEBin names (upstream CATPACK_SUMMARISE_BINS, only when cat_allow_unofficial_lineages=false)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins
+mkdir -p .tmp/catpack_summarise_megahit_comebin_{sample} && cd .tmp/catpack_summarise_megahit_comebin_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    CAT_pack summarise \\
+        -i "$wd/{input[0]}" \\
+        -o MEGAHIT-COMEBin-{sample}-bins_summary.txt
+    mv MEGAHIT-COMEBin-{sample}-bins_summary.txt "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/bins/MEGAHIT-COMEBin-{sample}-bins_summary.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_summarise_megahit_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_bins_megahit_metabinner"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/bins",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/MEGAHIT-MetaBinner-{sample}-bins.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/MEGAHIT-MetaBinner-{sample}-bins.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/MEGAHIT-MetaBinner-{sample}-bins.log",
+]
+depends_on = ["metabinner_bins_megahit", "cat_db_preparation"]
+description = "CAT_pack bins classification of the MEGAHIT MetaBinner bins (upstream CATPACK_BINS)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_bins_megahit_metabinner_{sample} && cd .tmp/catpack_bins_megahit_metabinner_{sample}
+mkdir -p input_bins
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBinner/bins/MEGAHIT-MetaBinner-{sample}*.fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_bins/$(basename "$f" .gz)
+done
+if ls input_bins/* >/dev/null 2>&1; then
+    CAT_pack bins \\
+        -n {threads} \\
+        -b input_bins/ \\
+        -d "$wd/$db_dir" \\
+        -t "$wd/$tax_dir" \\
+        -s .fa \\
+        -o MEGAHIT-MetaBinner-{sample}-bins
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins"
+    mv MEGAHIT-MetaBinner-{sample}-bins.* "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/" 2>/dev/null || true
+else
+    # zero-bin group: emit the empty artifacts so the declared-output
+    # contract holds
+    echo "catpack: no bins matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/MEGAHIT-MetaBinner-{sample}-bins.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/MEGAHIT-MetaBinner-{sample}-bins.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/MEGAHIT-MetaBinner-{sample}-bins.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_bins_megahit_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_addnames_megahit_metabinner"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/MEGAHIT-MetaBinner-{sample}-bins.bin2classification.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/MEGAHIT-MetaBinner-{sample}-bins_bin2classification.names.txt",
+]
+depends_on = ["catpack_bins_megahit_metabinner"]
+description = "CAT_pack add_names of the MEGAHIT MetaBinner classification (upstream CATPACK_ADDNAMES_BINS, --only_official unless cat_allow_unofficial_lineages)"
+shell = """
+wd=$(pwd)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain a tax/ directory (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins
+mkdir -p .tmp/catpack_addnames_megahit_metabinner_{sample} && cd .tmp/catpack_addnames_megahit_metabinner_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    only_official="--only_official"
+    if [ "{config.cat_allow_unofficial_lineages}" = "true" ]; then
+        only_official=""
+    fi
+    CAT_pack add_names \\
+        $only_official \\
+        -i "$wd/{input[0]}" \\
+        -t "$wd/$tax_dir" \\
+        -o MEGAHIT-MetaBinner-{sample}-bins_bin2classification.names.txt
+    mv MEGAHIT-MetaBinner-{sample}-bins_bin2classification.names.txt "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/MEGAHIT-MetaBinner-{sample}-bins_bin2classification.names.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_addnames_megahit_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_summarise_megahit_metabinner"
+when = "config.cat_db && !config.cat_allow_unofficial_lineages"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/MEGAHIT-MetaBinner-{sample}-bins_bin2classification.names.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/MEGAHIT-MetaBinner-{sample}-bins_summary.txt",
+]
+depends_on = ["catpack_addnames_megahit_metabinner"]
+description = "CAT_pack summarise of the MEGAHIT MetaBinner names (upstream CATPACK_SUMMARISE_BINS, only when cat_allow_unofficial_lineages=false)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins
+mkdir -p .tmp/catpack_summarise_megahit_metabinner_{sample} && cd .tmp/catpack_summarise_megahit_metabinner_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    CAT_pack summarise \\
+        -i "$wd/{input[0]}" \\
+        -o MEGAHIT-MetaBinner-{sample}-bins_summary.txt
+    mv MEGAHIT-MetaBinner-{sample}-bins_summary.txt "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/bins/MEGAHIT-MetaBinner-{sample}-bins_summary.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_summarise_megahit_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_bins_megahit_semibin2"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/bins",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/MEGAHIT-SemiBin2-{sample}-bins.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/MEGAHIT-SemiBin2-{sample}-bins.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/MEGAHIT-SemiBin2-{sample}-bins.log",
+]
+depends_on = ["semibin_megahit", "cat_db_preparation"]
+description = "CAT_pack bins classification of the MEGAHIT SemiBin2 bins (upstream CATPACK_BINS)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_bins_megahit_semibin2_{sample} && cd .tmp/catpack_bins_megahit_semibin2_{sample}
+mkdir -p input_bins
+for f in "$wd"/{config.out_dir}/GenomeBinning/SemiBin2/bins/MEGAHIT-SemiBin2-{sample}*.fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_bins/$(basename "$f" .gz)
+done
+if ls input_bins/* >/dev/null 2>&1; then
+    CAT_pack bins \\
+        -n {threads} \\
+        -b input_bins/ \\
+        -d "$wd/$db_dir" \\
+        -t "$wd/$tax_dir" \\
+        -s .fa \\
+        -o MEGAHIT-SemiBin2-{sample}-bins
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins"
+    mv MEGAHIT-SemiBin2-{sample}-bins.* "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/" 2>/dev/null || true
+else
+    # zero-bin group: emit the empty artifacts so the declared-output
+    # contract holds
+    echo "catpack: no bins matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/MEGAHIT-SemiBin2-{sample}-bins.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/MEGAHIT-SemiBin2-{sample}-bins.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/MEGAHIT-SemiBin2-{sample}-bins.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_bins_megahit_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_addnames_megahit_semibin2"
+when = "config.cat_db"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/MEGAHIT-SemiBin2-{sample}-bins.bin2classification.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/MEGAHIT-SemiBin2-{sample}-bins_bin2classification.names.txt",
+]
+depends_on = ["catpack_bins_megahit_semibin2"]
+description = "CAT_pack add_names of the MEGAHIT SemiBin2 classification (upstream CATPACK_ADDNAMES_BINS, --only_official unless cat_allow_unofficial_lineages)"
+shell = """
+wd=$(pwd)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain a tax/ directory (a CAT_prepare archive or unpacked directory)" 1>&2
+    exit 1
+fi
+mkdir -p {config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins
+mkdir -p .tmp/catpack_addnames_megahit_semibin2_{sample} && cd .tmp/catpack_addnames_megahit_semibin2_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    only_official="--only_official"
+    if [ "{config.cat_allow_unofficial_lineages}" = "true" ]; then
+        only_official=""
+    fi
+    CAT_pack add_names \\
+        $only_official \\
+        -i "$wd/{input[0]}" \\
+        -t "$wd/$tax_dir" \\
+        -o MEGAHIT-SemiBin2-{sample}-bins_bin2classification.names.txt
+    mv MEGAHIT-SemiBin2-{sample}-bins_bin2classification.names.txt "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/MEGAHIT-SemiBin2-{sample}-bins_bin2classification.names.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_addnames_megahit_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_summarise_megahit_semibin2"
+when = "config.cat_db && !config.cat_allow_unofficial_lineages"
+input = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/MEGAHIT-SemiBin2-{sample}-bins_bin2classification.names.txt",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/MEGAHIT-SemiBin2-{sample}-bins_summary.txt",
+]
+depends_on = ["catpack_addnames_megahit_semibin2"]
+description = "CAT_pack summarise of the MEGAHIT SemiBin2 names (upstream CATPACK_SUMMARISE_BINS, only when cat_allow_unofficial_lineages=false)"
+shell = """
+wd=$(pwd)
+mkdir -p {config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins
+mkdir -p .tmp/catpack_summarise_megahit_semibin2_{sample} && cd .tmp/catpack_summarise_megahit_semibin2_{sample}
+if [ -s "$wd/{input[0]}" ]; then
+    CAT_pack summarise \\
+        -i "$wd/{input[0]}" \\
+        -o MEGAHIT-SemiBin2-{sample}-bins_summary.txt
+    mv MEGAHIT-SemiBin2-{sample}-bins_summary.txt "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/"
+else
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/bins/MEGAHIT-SemiBin2-{sample}-bins_summary.txt"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_summarise_megahit_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_bat_summary"
+when = "config.cat_db"
+input = ["{config.out_dir}/Taxonomy/CAT"]
+output = ["{config.out_dir}/Taxonomy/CAT/bat_summary.tsv"]
+depends_on = [
+    "catpack_addnames_spades_metabat2",
+    "catpack_addnames_spades_maxbin2",
+    "catpack_addnames_spades_concoct",
+    "catpack_addnames_spades_comebin",
+    "catpack_addnames_spades_metabinner",
+    "catpack_addnames_spades_semibin2",
+    "catpack_addnames_megahit_metabat2",
+    "catpack_addnames_megahit_maxbin2",
+    "catpack_addnames_megahit_concoct",
+    "catpack_addnames_megahit_comebin",
+    "catpack_addnames_megahit_metabinner",
+    "catpack_addnames_megahit_semibin2",
+]
+description = "Concatenate all CAT_pack add_names tables (upstream CATPACK collectFile bat_summary.tsv, keepHeader + sort deep)"
+shell = """
+mkdir -p {config.out_dir}/Taxonomy/CAT
+if ls {config.out_dir}/Taxonomy/CAT/*/*/*/bins/*bin2classification.names.txt >/dev/null 2>&1; then
+    first=$(ls {config.out_dir}/Taxonomy/CAT/*/*/*/bins/*bin2classification.names.txt | head -1)
+    head -1 "$first" > bat_summary.tsv
+    for f in {config.out_dir}/Taxonomy/CAT/*/*/*/bins/*bin2classification.names.txt; do
+        tail -n +2 "$f"
+    done | sort >> bat_summary.tsv
+else
+    touch bat_summary.tsv
+fi
+mv bat_summary.tsv {config.out_dir}/Taxonomy/CAT/
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/qsv.yaml"
+
+

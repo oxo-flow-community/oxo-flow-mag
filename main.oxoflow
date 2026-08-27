@@ -106,6 +106,23 @@ refine_bins_dastool_threshold = 0.5
 # downloaded at env creation and unpacked at run time — see README)
 run_checkm = false
 checkm_db = ""
+# CheckM2 bin QC (upstream --run_checkm2; the ~10GB .dmnd database is
+# user-provided — checkm2 database --download; fails fast when empty)
+run_checkm2 = false
+checkm2_db = ""
+# GUNC contamination QC (upstream --run_gunc; the reference database is
+# user-provided — gunc download_db; fails fast when empty)
+run_gunc = false
+gunc_db = ""
+# CAT/BAT bin classification (upstream --cat_db; the CAT_prepare database
+# is user-provided — CAT_pack download + prepare, or the archive/directory
+# itself; db/ and tax/ directories are discovered inside it)
+cat_db = ""
+cat_allow_unofficial_lineages = false
+# Virus identification (upstream --run_virus_identification; the geNomad
+# database is user-provided — genomad download-database; fails fast when empty)
+run_virus_identification = false
+genomad_db = ""
 # Domain classification with Tiara (upstream --bin_domain_classification / --tiara_min_length)
 bin_domain_classification = false
 tiara_min_length = 3000
@@ -155,3 +172,9 @@ path = "modules/07_refinement.oxoflow"
 
 [[include]]
 path = "modules/08_domain.oxoflow"
+
+[[include]]
+path = "modules/09_catpack.oxoflow"
+
+[[include]]
+path = "modules/10_virus_identification.oxoflow"

@@ -4,7 +4,7 @@
 
 > ★ Verified · ⇄ Official port of [`nf-core/mag`](https://github.com/nf-core/mag) @ `5.5.0` — same tools, same versions, same commands. Part of the [oxo-flow-community catalog](https://oxo-flow-community.github.io/).
 
-Run this workflow and paired-end metagenomic reads become quality-checked, assembled, binned and taxonomically classified draft genomes. Reads are trimmed and cleared of phiX contamination (FastQC + fastp + bowtie2), assembled with both SPAdes and MEGAHIT, and assessed with QUAST and Prodigal. The assemblies are then binned with six complementary binners (MetaBAT2, MaxBin2, CONCOCT, COMEBin, MetaBinner, SemiBin2), the bins QC'd with BUSCO and classified with GTDB-Tk, annotated with PROKKA, and everything is summarized into a single MultiQC report. The optional upstream branches — host read removal, read normalization (bbnorm), adapterremoval/trimmomatic clipping, DAS Tool refinement, CheckM bin QC and Tiara domain classification — are ported as when-gated rules, all off by default (see [Gated branches](#gated-branches)):
+Run this workflow and paired-end metagenomic reads become quality-checked, assembled, binned and taxonomically classified draft genomes. Reads are trimmed and cleared of phiX contamination (FastQC + fastp + bowtie2), assembled with both SPAdes and MEGAHIT, and assessed with QUAST and Prodigal. The assemblies are then binned with six complementary binners (MetaBAT2, MaxBin2, CONCOCT, COMEBin, MetaBinner, SemiBin2), the bins QC'd with BUSCO and classified with GTDB-Tk, annotated with PROKKA, and everything is summarized into a single MultiQC report. The optional upstream branches — host read removal, read normalization (bbnorm), adapterremoval/trimmomatic clipping, DAS Tool refinement, CheckM/CheckM2/GUNC bin QC, Tiara domain classification, CAT/BAT bin classification and virus identification — are ported as when-gated rules, all off by default (see [Gated branches](#gated-branches)):
 
 ```
 FastQC -> fastp -> phiX removal -> FastQC
@@ -27,7 +27,11 @@ Optional branches, each gated by one config key (off by default):
   (optional) read normalization                           config.bbnorm
   (optional) DAS Tool bin refinement                      config.refine_bins_dastool
   (optional) CheckM bin QC (feeds the GTDB-Tk filter)     config.run_checkm
+  (optional) CheckM2 bin QC (feeds the GTDB-Tk filter)    config.run_checkm2
+  (optional) GUNC contamination QC                        config.run_gunc
   (optional) Tiara domain classification                  config.bin_domain_classification
+  (optional) CAT/BAT bin classification                   config.cat_db
+  (optional) Virus identification (geNomad)               config.run_virus_identification
 ```
 
 Tool versions and resource requests (cpu/memory/time per process label) match the upstream module environments and `conf/base.config`. The workflow deviates only in the places listed in the fidelity table below, and in one deliberate divergence: the GTDB-Tk database is not downloaded mid-run (see [Requirements](#3-requirements) and [Usage](#usage)). See `envs/*.yaml` for the pinned environments.
@@ -63,13 +67,14 @@ cd oxo-flow-mag
 Derived from the workflow's own inputs and `[rules.resources]`:
 
 - **Reference data you must provide:**
-  - Your paired-end reads as `{sample}_R1.fastq.gz` / `{sample}_R2.fastq.gz` per sample in `config.input_dir` (default `test/fixtures/raw`, which ships tiny test fixtures — point this at your data). Single-end and multi-library lanes are not ported.
+  - Your paired-end reads as `{sample}_R1.fastq.gz` / `{sample}_R2.fastq.gz` per sample in `config.input_dir` (default `test/fixtures/raw`, which ships tiny test fixtures — point this at your data). Uniform single-end libraries can be run by overriding `config.sample_pattern`; interleaved and multi-library lanes are not ported.
   - A GTDB-Tk reference database for the classification step: oxo-flow cannot download it mid-run, so you must download the release tarball (`gtdbtk_data.tar.gz`, ~100 GB) or unpack it to a directory and set `config.gtdb_db` (see [Usage](#usage)).
   - The phiX reference is already bundled in the repo (`assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz`, the upstream default) — no download needed.
 - **Compute:** per-rule requests go up to 12 CPUs and 140 GB RAM — SPAdes requests 10 CPUs / 72 GB / 24 h, GTDB-Tk classifywf 2 CPUs / 140 GB / 12 h (defaults are 1 thread / 6 GB). A large-memory machine or cluster is expected for real datasets; the resource pool queues rules so the sum of parallel rules can exceed your machine.
 - **Tools:** delivered as **conda environments with pinned versions** — one `envs/*.yaml` per tool, pinning the exact package versions of the upstream nf-core module environments. You need conda (or mamba) installed; there is no container layer, so Docker/Singularity are not used.
 - **CheckM data (first metabinner env creation):** the `metabinner` environment's checkm-genome package downloads the CheckM reference data (~1.1 GB, `data.ace.uq.edu.au`, sha256 `971ec469…`) when the env is first created — upstream bakes this into its containers at build time. If that host is slow for you, download `checkm_data_2015_01_16.tar.gz` yourself and re-create the env with `CHECKM_DATA_PATH=/path/to/checkm_data_2015_01_16.tar.gz` exported — checkm-genome's installer then copies the local file instead of downloading. The `--run_checkm` branch uses the same reference data via `envs/checkm.yaml` (same checkm-genome pin as the upstream module); point `config.checkm_db` at the local unpacked `checkm_data_2015_01_16` directory to skip the first-use download.
 - **Optional references (only when the matching branch is enabled):** a host genome FASTA for `config.host_fasta` (host read removal); a prebuilt bowtie2 index for `config.host_fasta_bowtie2index` (skips the build rule); Tiara downloads its model on first use of the `--bin_domain_classification` branch.
+- **Optional reference databases (per gated branch, all user-provided — the engine cannot download mid-run):** the CheckM2 database for `config.run_checkm2` (`checkm2 database --download`, ~8 GB); the GUNC reference database for `config.run_gunc` (`gunc download_db`, ~21 GB); the CAT-nr database for `config.cat_db` (`CAT_pack download` + `CAT_pack prepare`, ~35 GB, or the prepared archive/unpacked directory itself — the branch discovers the `db/` and `tax/` directories inside it); the geNomad database for `config.run_virus_identification` (`genomad download-database`, ~10 GB). Each gated branch fails fast with a clear message when its database is not configured.
 - **ALE (one-time source build):** the upstream pin (`ale=20180904` from bioconda) is uninstallable — its pymix chain needs matplotlib <1.5, which no channel carries. The rules only call ALE's C binaries, so `envs/ale.yaml` ships the build toolchain and `scripts/build_ale.sh` compiles the pinned upstream source tag into the env (idempotent): `bash scripts/build_ale.sh` after the env is created.
 
 ## Usage
@@ -95,7 +100,7 @@ and set `gtdb_db = "gtdbtk_data.tar.gz"`, or unpack it and pass the directory. B
 
 All upstream `params` with their default values are exposed in the `[config]` section of [main.oxoflow](main.oxoflow): QC thresholds (`reads_minlength`, `fastp_qualified_quality`, ...), binning parameters (`bin_min_size`, `min_length_unbinned_contigs`, `max_unbinned_contigs`, CONCOCT chunk size/overlap, MetaBinner scale, SemiBin2 RNG seed/environment, MetaBAT2 RNG seed), GTDB-Tk thresholds (`gtdbtk_min_completeness`, `gtdbtk_max_contamination`, `gtdbtk_min_perc_aa`, `gtdbtk_min_af`, `gtdbtk_pplacer_cpus`) and the cohort. Unsupported upstream parameters are omitted (see the fidelity table).
 
-Override any config value on the command line with `KEY=VALUE` arguments (`oxo-flow run main.oxoflow clip_tool=trimmomatic`). The optional branches are switched on the same way: `host_fasta=path/to/host.fna`, `bbnorm=true`, `refine_bins_dastool=true`, `run_checkm=true`, `bin_domain_classification=true`, `clip_tool=adapterremoval|trimmomatic`.
+Override any config value on the command line with `KEY=VALUE` arguments (`oxo-flow run main.oxoflow clip_tool=trimmomatic`). The optional branches are switched on the same way: `host_fasta=path/to/host.fna`, `bbnorm=true`, `refine_bins_dastool=true`, `run_checkm=true`, `run_checkm2=true`, `run_gunc=true`, `bin_domain_classification=true`, `clip_tool=adapterremoval|trimmomatic`, `cat_db=path/to/cat_db.tar.gz`, `run_virus_identification=true` (each with its database, see [Requirements](#3-requirements)).
 
 ### Outputs
 
@@ -105,8 +110,10 @@ Override any config value on the command line with `KEY=VALUE` arguments (`oxo-f
 - `Assembly/{SPAdes,MEGAHIT}/` — assembly fasta (gz), logs, `QC/{sample}/` with the QUAST report files and `ALE/`
 - `Annotation/Prodigal/{SPAdes,MEGAHIT}/{sample}/` — fna/gff/faa/all.txt (gz)
 - `Annotation/Prokka/{SPAdes,MEGAHIT}/` — per-bin PROKKA output
-- `GenomeBinning/{binner}/bins/` and `.../unbinned/` — bins and contig chunks; `MetaBAT2/discarded/` and `MetaBinner/discarded/` — contigs rejected by the binners (as upstream); `MetaBinner/unbinned/` — the unbinned contigs; `CONCOCT/stats/` — clustering tables; `QC/BUSCO/.../` — BUSCO summaries; `QC/*.tsv` — concatenated summaries; `QC/CheckM/` — CheckM lineage QC (with `--run_checkm`); `DASTool/{bins,unbinned}/` — DAS Tool refined bins (with `--refine_bins_dastool`); `Tiara/` — per-group domain classification tables (with `--bin_domain_classification`); `depths/bins/` — per-bin depths; `bin_summary.tsv`
+- `GenomeBinning/{binner}/bins/` and `.../unbinned/` — bins and contig chunks; `MetaBAT2/discarded/` and `MetaBinner/discarded/` — contigs rejected by the binners (as upstream); `MetaBinner/unbinned/` — the unbinned contigs; `CONCOCT/stats/` — clustering tables; `QC/BUSCO/.../` — BUSCO summaries; `QC/*.tsv` — concatenated summaries; `QC/CheckM/` — CheckM lineage QC (with `--run_checkm`); `QC/CheckM2/` — CheckM2 per-group reports (with `--run_checkm2`); `QC/GUNC/` — GUNC per-group raw results plus the merged `gunc_merge_checkm.tsv` (with `--run_gunc`); `DASTool/{bins,unbinned}/` — DAS Tool refined bins (with `--refine_bins_dastool`); `Tiara/` — per-group domain classification tables (with `--bin_domain_classification`); `depths/bins/` — per-bin depths; `bin_summary.tsv`
 - `Taxonomy/GTDB-Tk/{assembler}/{binner}/{sample}/` — GTDB-Tk output trees, `gtdbtk_summary.tsv`
+- `Taxonomy/CAT/{assembler}/{binner}/{sample}/bins/` — CAT/BAT classification, names and (with the default `cat_allow_unofficial_lineages=false`) summary tables (with `--cat_db`)
+- `VirusIdentification/geNomad/{sample}/` — geNomad per-sample virus summary, nucleotide and protein predictions (with `--run_virus_identification`)
 - `Taxonomy/Tiara/` — per-assembly Tiara probability tables (with `--bin_domain_classification`)
 - `multiqc/multiqc_report.html`
 
@@ -147,6 +154,12 @@ Override any config value on the command line with `KEY=VALUE` arguments (`oxo-f
 | DAS Tool contig2bin join (upstream bash quirk) | `IFS=\t'` (ANSI-C) instead of upstream `IFS=$"\t"` | Verified empirically: `IFS=$"\t"` splits on the letter `t`, not tabs, so the upstream tiara_classify while-loop is broken for bin names containing `t` (e.g. MetaBAT2); the port uses the ANSI-C form |
 | CHECKM_LINEAGEWF / CHECKM_QA (--run_checkm) | `05_binqc.oxoflow` + 25 rules, gated on `config.run_checkm` | `run_checkm()` shell function (gunzip-to-scratch with `-x fa`, `--pplacer_threads`, empty-group touched artifacts), then `checkm qa` with `-o 2 --tab_table`; both per-(assembler, binner) runs cover bins and unbinned chunks; outputs land in `GenomeBinning/QC/CheckM/` with the `-unclassified-unrefined[-_unbinned]` naming; a qsv rowskey concat produces `checkm_summary.tsv` |
 | CheckM metrics into the GTDB-Tk filter | `filter_bins_by_qc.py --checkm-qa-file` on both gtdbtk rules; `bin_summary` passes `--checkm_summary` | Matches upstream: with `--run_checkm` the GTDB-Tk filter uses CheckM completeness/contamination instead of BUSCO; without it (the default) the BUSCO-only filter matches the upstream default config |
+| CHECKM2_PREDICT / CONCAT_CHECKM2_TSV (--run_checkm2) | `05_binqc.oxoflow` + 13 rules gated on `config.run_checkm2` | `checkm2 predict --input input_bins/*` per (assembler, binner) group (gunzip-to-scratch like the CheckM branch), report copied to `QC/CheckM2/{prefix}_checkm2_report.tsv`, qsv rowskey concat into `checkm2_summary.tsv`; `config.checkm2_db` points at the local `.dmnd` database (the upstream module environment, `checkm2=1.1.0` + keras/numpy/pandas/scikit-learn/scipy/tensorflow pins, is in `envs/checkm2.yaml`); fails fast when unset |
+| CheckM2 metrics into the GTDB-Tk filter | `filter_bins_by_qc.py --checkm2-qa-file` on both gtdbtk rules; `bin_summary` passes `--checkm2_summary` | Matches upstream: CheckM2 'Name' column is matched to the bin files with '.fa' appended (upstream appends the extension after CheckM2 strips `.gz`/`.fa`); with `--run_checkm2` the filter uses CheckM2 completeness/contamination (BUSCO/CheckM readings are still merged in exactly like upstream's `[busco, checkm2, checkm]` column list) |
+| GUNC_RUN / CONCAT_GUNC_TSV (--run_gunc) | `05_binqc.oxoflow` + 13 rules gated on `config.run_gunc` | `gunc run --input_file` per (assembler, binner) group (bins + unbinned chunks, gunzip-to-scratch), per-database outputs renamed to `{prefix}_maxCSS_level.tsv` and moved under `QC/GUNC/raw/{prefix}/` like the upstream publishDir, qsv rowskey concat into `gunc_summary.tsv`; `config.gunc_db` points at the local reference database (`gunc=1.1.0` in `envs/gunc.yaml`); fails fast when unset |
+| GUNC_MERGECHECKM (--run_gunc + --run_checkm) | `05_binqc.oxoflow` + 13 rules gated on `config.run_gunc && config.run_checkm` | `gunc merge_checkm -g <gunc> -c <checkm> -o .` per group, guarded on both inputs being non-empty (upstream `if (params.run_gunc)` requires CheckM output); `gunc_merge_checkm.tsv` moved to `QC/GUNC/checkmmerged/{prefix}/` like the upstream publishDir, qsv rowskey concat into `gunc_checkm_summary.tsv` |
+| CATPACK_BINS / ADDNAMES / SUMMARISE (--cat_db) | `09_catpack.oxoflow`, 38 rules gated on `config.cat_db` | `cat_db_preparation` unpacks the archive/directory and locates the `db/` + `tax/` directories; `CAT_pack bins` per (assembler, binner) group with the upstream `-d -t -s .fa` args (input bins decompressed to a scratch `input_bins/`), results published to `Taxonomy/CAT/{assembler}/{binner}/{sample}/bins/`; `CAT_pack add_names` (with `--only_official` unless `cat_allow_unofficial_lineages=true`) and `CAT_pack summarise` (only with the official-lineage default, as upstream) per group; a header-keeping sorted `bat_summary.tsv` replicates upstream `collectFile keepHeader + sort 'deep'`; `cat=6.0.1` + `gzip=1.14` in `envs/catpack.yaml` |
+| GENOMAD_ENDTOEND (--run_virus_identification) | `10_virus_identification.oxoflow`, 3 rules gated on `config.run_virus_identification` | `genomad_db_preparation` unpacks the archive/directory; `genomad end-to-end` per assembly (SPAdes scaffolds + MEGAHIT contigs) with the upstream default args `--cleanup --min-score 0.7 --splits 1`, output `.fna`/`.faa` gzipped and the whole per-sample dir moved to `VirusIdentification/geNomad/{sample}/` like the upstream publishDir; degenerate empty results touch the declared outputs instead of crashing; `genomad=1.11.2` in `envs/genomad.yaml` |
 | TIARA_TIARA / TIARA_CLASSIFY (--bin_domain_classification) | `08_domain.oxoflow`, 39 rules gated on `config.bin_domain_classification` | `tiara --probabilities` per assembly, FASTATOCONTIG2BIN per (assembler, binner, bins/unbins) group, `domain_classification.R --join_prokaryotes` per group, one qsv-concatenated `tiara_summary.tsv`; unbins groups exist only for the three binners upstream splits (MetaBAT2, MaxBin2, MetaBinner); only the classification tables are published (as upstream) |
 
 ### Gated branches (all off by default, one config key each)
@@ -159,20 +172,22 @@ Override any config value on the command line with `KEY=VALUE` arguments (`oxo-f
 | Read normalization | `bbnorm = true` | 1 | `BBNORM` (bbmap 39.18, params `bbnorm_target`/`bbnorm_min`) |
 | DAS Tool bin refinement | `refine_bins_dastool = true` | 28 | `BINNING_REFINEMENT` subworkflow (`refine_bins_dastool_threshold`) |
 | CheckM bin QC | `run_checkm = true` | 25 | `CHECKM_LINEAGEWF` + `CHECKM_QA` (checkm-genome 1.2.5); feeds the GTDB-Tk filter (`checkm_db` optional local lineage DB) |
+| CheckM2 bin QC | `run_checkm2 = true` | 13 | `CHECKM2_PREDICT` + `CONCAT_CHECKM2_TSV` (checkm2 1.1.0, `checkm2_db`); feeds the GTDB-Tk filter |
+| GUNC contamination QC | `run_gunc = true` | 13 | `GUNC_RUN` + `CONCAT_GUNC_TSV` (gunc 1.1.0, `gunc_db`); with `run_checkm` also 13 `GUNC_MERGECHECKM` rules + `CONCAT_GUNC_CHECKM_TSV` |
 | Tiara domain classification | `bin_domain_classification = true` | 39 | `TIARA` subworkflow (tiara 1.0.3, `tiara_min_length`) |
+| CAT/BAT bin classification | `cat_db = "path/to/db.tar.gz"` | 38 | `CAT/BAT` subworkflow bins column (cat 6.0.1; `cat_allow_unofficial_lineages` toggles `--only_official`) |
+| Virus identification | `run_virus_identification = true` | 3 | `GENOMAD_ENDTOEND` (genomad 1.11.2, `genomad_db`) |
 
-Each gate activates exactly its own branch: with the default config the 260-rule plan is identical to the pre-branch port, and toggling one key adds only that branch's rules (verified by `dry-run` per key).
+Each gate activates exactly its own branch: with the default config the executed plan (134 rules of 311 total) is identical to the pre-branch port, and toggling one key adds only that branch's rules (verified by `dry-run` per key).
 
 ### Not ported (with reasons)
 
 - **Long-read assembly and binning** (`--longreads`): the upstream longreads subworkflow doubles the whole binning graph (every assembler x binner x sample) and needs long-read input files the paired-end `{sample}_R1/_R2` input model does not provide.
 - **Kaiju and diamond taxonomic profiling**: absent from upstream 5.5.0 entirely (removed upstream) — there is no module script to translate.
-- **CheckM2 / GUNC QC** (`--run_checkm2`, `--run_gunc`): the CheckM2 (~8 GB) and GUNC (~21 GB) databases are remote downloads the engine cannot fetch mid-run; the ported CheckM branch needs only the CheckM reference data, which the checkm-genome package fetches once at conda env creation.
-- **Single-end / interleaved input modes** (upstream `--input` samplesheet modes): the port's input model is paired-end `{sample}_R1.fastq.gz` / `{sample}_R2.fastq.gz` only.
-- **Ancient DNA** (`--ancient_dna`): rewires the inputs of 40+ rules (skips host removal, phiX removal and assembly) for a niche parameter — would double the rule graph for an off-by-default mode.
-- **CAT/BAT** (`--cat_db`): needs the CAT-nr database (~35 GB) and a MASH sketch downloaded/generated at run time.
-- **Virus identification** (`--virus_identification`): needs the genomad database (~10 GB) downloaded at run time.
-- **Pydamage, CheckM2 and GUNC report pages**: report-only artifacts of tools that are themselves not ported (above).
+- **Single-end / interleaved input modes** (upstream `--input` samplesheet modes): the port's default input model is paired-end `{sample}_R1.fastq.gz` / `{sample}_R2.fastq.gz`; uniform single-end libraries can be run by overriding `config.sample_pattern` (e.g. `{sample}.fastq.gz`); interleaved and mixed-library samplesheets are not ported.
+- **Ancient DNA** (`--ancient_dna`): rewires the workflow at 8 points — skips host removal, phiX removal and assembly; adds pydamage damage correction and freebayes/bcftools SNP calling into the GTDB-Tk filter and bin summary — for a niche off-by-default parameter; porting it would double the rule graph around the QC and taxonomy stages.
+- **CAT/BAT unbinned-contigs classification** (`--cat_classify_unbinned`, upstream default `false`): the ported CAT branch classifies binned contigs only; the unbinned column would add a second full `CAT_pack` pass over the chunked contigs, which are already classified by Tiara in the `bin_domain_classification` branch.
+- **Pydamage report page**: part of the ancient DNA branch (above); the CheckM2 and GUNC report pages are ported with their tools.
 - **BUSCO `*-busco.batch_summary.failed.txt`**: only exists upstream when a BUSCO run failed — an error-only artifact.
 - **nf-core boilerplate files** (pipeline_summary/methods_description, versions.yml): not analysis output.
 
@@ -196,6 +211,17 @@ The acceptance test needs only `oxo-flow` (v0.12.0+) on `PATH` (override with `O
 | `bin_domain_classification=true` | ✅ PASS (TIARA_TIARA per-contig + TIARA_CLASSIFY per bin set; zero-classified sets emit an empty tsv — live-verified guard, see commit b67191b) |
 
 The remaining when-gated branches are statically verified: `validate` + `lint` + `dry-run` confirm each gate activates exactly its own branch with the default plan unchanged (see the gated-branches table). Runtime behavior of the underlying tools is unchanged from upstream nf-core/mag.
+
+**Live queue** — the four branches ported in the catalog truthification wave (2026-08-27) are not yet live-verified; they need real databases and are queued for the box-queue live-testing campaign:
+
+| Toggle | Needs | Status |
+|---|---|---|
+| `run_checkm2=true` + `checkm2_db` | CheckM2 database (`checkm2 database --download`, ~8 GB) | queued — `checkm2 predict` run on a real bin set |
+| `run_gunc=true` + `gunc_db` | GUNC reference database (`gunc download_db`, ~21 GB) | queued — `gunc run` + `merge_checkm` merged output |
+| `cat_db=...` | CAT-nr database (CAT_pack download + prepare, ~35 GB) | queued — `CAT_pack bins`/`add_names`/`summarise` + `bat_summary.tsv` |
+| `run_virus_identification=true` + `genomad_db` | geNomad database (`genomad download-database`, ~10 GB) | queued — `genomad end-to-end` on a real assembly |
+
+Until then these branches are statically verified only (validate + lint + dry-run per gate).
 
 ## License
 
