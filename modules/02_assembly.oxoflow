@@ -34,15 +34,20 @@ depends_on = ["phix_align", "bbnorm"]
 shell = """
 wd=$(pwd)
 mkdir -p intermediates/assembly/SPAdes {config.out_dir}/Assembly/SPAdes
-mkdir -p .tmp/spades_{sample} && cd .tmp/spades_{sample}
+# wipe the scratch first: a failed attempt's leftover output dir makes
+# spades.py refuse to start on resume
+rm -rf .tmp/spades_{sample} && mkdir -p .tmp/spades_{sample} && cd .tmp/spades_{sample}
 # precedence: --bbnorm normalizes after phiX removal and supersedes the
 # phiX-removed reads for assembly (upstream channel wiring)
 if [ -f "$wd/intermediates/QC_shortreads/bbnorm/{sample}_1.nm.fastq.gz" ]; then
     ln -sf "$wd/intermediates/QC_shortreads/bbnorm/{sample}_1.nm.fastq.gz" r1.fastq.gz
     ln -sf "$wd/intermediates/QC_shortreads/bbnorm/{sample}_2.nm.fastq.gz" r2.fastq.gz
 else
-    ln -sf "$wd/{input[0]}" r1.fastq.gz
-    ln -sf "$wd/{input[1]}" r2.fastq.gz
+    # {input[N]} would interpolate the glob-annotated pattern (trailing '*')
+    # into the symlink target and dangle; the phiX-removed names are
+    # deterministic, so pin the exact paths here.
+    ln -sf "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz" r1.fastq.gz
+    ln -sf "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz" r2.fastq.gz
 fi
 # --memory = task.memory in GB (72), spades writes generic-named files with -o ./
 spades.py \\
@@ -99,15 +104,20 @@ depends_on = ["phix_align", "bbnorm"]
 shell = """
 wd=$(pwd)
 mkdir -p intermediates/assembly/MEGAHIT {config.out_dir}/Assembly/MEGAHIT
-mkdir -p .tmp/megahit_{sample} && cd .tmp/megahit_{sample}
+# wipe the scratch first: a failed attempt's leftover megahit_out makes
+# megahit refuse to start on resume
+rm -rf .tmp/megahit_{sample} && mkdir -p .tmp/megahit_{sample} && cd .tmp/megahit_{sample}
 # precedence: --bbnorm normalizes after phiX removal and supersedes the
 # phiX-removed reads for assembly (upstream channel wiring)
 if [ -f "$wd/intermediates/QC_shortreads/bbnorm/{sample}_1.nm.fastq.gz" ]; then
     ln -sf "$wd/intermediates/QC_shortreads/bbnorm/{sample}_1.nm.fastq.gz" r1.fastq.gz
     ln -sf "$wd/intermediates/QC_shortreads/bbnorm/{sample}_2.nm.fastq.gz" r2.fastq.gz
 else
-    ln -sf "$wd/{input[0]}" r1.fastq.gz
-    ln -sf "$wd/{input[1]}" r2.fastq.gz
+    # {input[N]} would interpolate the glob-annotated pattern (trailing '*')
+    # into the symlink target and dangle; the phiX-removed names are
+    # deterministic, so pin the exact paths here.
+    ln -sf "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz" r1.fastq.gz
+    ln -sf "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz" r2.fastq.gz
 fi
 # -m follows the machine's effective memory budget instead of the
 # upstream hardcoded 40 GB (live: 40 GB on a 3.7 GB host is an OOM
