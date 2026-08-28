@@ -291,12 +291,14 @@ conda = "envs/bowtie2.yaml"
 name = "host_removal_align"
 when = "config.host_fasta != ''"
 input = [
-    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_1.fastp.fastq.gz",
-    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_2.fastp.fastq.gz",
-    "intermediates/QC_shortreads/adapterremoval/{sample}_run1_ar2.pair1.truncated.fastq.gz",
-    "intermediates/QC_shortreads/adapterremoval/{sample}_run1_ar2.pair2.truncated.fastq.gz",
-    "intermediates/QC_shortreads/trimmomatic/{sample}_run1_trimmomatic.paired.trim_1.fastq.gz",
-    "intermediates/QC_shortreads/trimmomatic/{sample}_run1_trimmomatic.paired.trim_2.fastq.gz",
+    # Optional globs for the clip-tool variants (see phix_align) — exactly
+    # one materializes per clip_tool; host_index stays literal.
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_1.fastp.fastq.gz*",
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_2.fastp.fastq.gz*",
+    "intermediates/QC_shortreads/adapterremoval/{sample}_run1_ar2.pair1.truncated.fastq.gz*",
+    "intermediates/QC_shortreads/adapterremoval/{sample}_run1_ar2.pair2.truncated.fastq.gz*",
+    "intermediates/QC_shortreads/trimmomatic/{sample}_run1_trimmomatic.paired.trim_1.fastq.gz*",
+    "intermediates/QC_shortreads/trimmomatic/{sample}_run1_trimmomatic.paired.trim_2.fastq.gz*",
     "intermediates/binning/host_index",
 ]
 output = [
@@ -305,7 +307,8 @@ output = [
     "{config.out_dir}/QC_shortreads/remove_host/{sample}_run1_host_removed.bowtie2.log",
 ]
 description = "Remove host reads by bowtie2 mapping (upstream BOWTIE2_REMOVAL_ALIGN)"
-depends_on = ["host_removal_build"]
+# Explicit edges for the globbed clip-tool inputs (see phix_align).
+depends_on = ["host_removal_build", "fastp", "adapterremoval_pe", "trimmomatic"]
 shell = """
 mkdir -p intermediates/QC_shortreads/remove_host {config.out_dir}/QC_shortreads/remove_host
 # the index comes from the build rule or from the user-supplied prebuilt index
@@ -361,14 +364,19 @@ conda = "envs/bowtie2.yaml"
 [[rules]]
 name = "phix_align"
 input = [
-    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_1.fastp.fastq.gz",
-    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_2.fastp.fastq.gz",
-    "intermediates/QC_shortreads/adapterremoval/{sample}_run1_ar2.pair1.truncated.fastq.gz",
-    "intermediates/QC_shortreads/adapterremoval/{sample}_run1_ar2.pair2.truncated.fastq.gz",
-    "intermediates/QC_shortreads/trimmomatic/{sample}_run1_trimmomatic.paired.trim_1.fastq.gz",
-    "intermediates/QC_shortreads/trimmomatic/{sample}_run1_trimmomatic.paired.trim_2.fastq.gz",
-    "intermediates/QC_shortreads/remove_host/{sample}_run1_host_removed.unmapped_1.fastq.gz",
-    "intermediates/QC_shortreads/remove_host/{sample}_run1_host_removed.unmapped_2.fastq.gz",
+    # All clipped-read candidates are optional globs: exactly one clip
+    # variant materializes per clip_tool value, and the resume manifest must
+    # tolerate the inactive branches matching nothing (literal paths from
+    # when-false producers would fail the input snapshot and force a re-run
+    # on every resume — "input changed").
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_1.fastp.fastq.gz*",
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_2.fastp.fastq.gz*",
+    "intermediates/QC_shortreads/adapterremoval/{sample}_run1_ar2.pair1.truncated.fastq.gz*",
+    "intermediates/QC_shortreads/adapterremoval/{sample}_run1_ar2.pair2.truncated.fastq.gz*",
+    "intermediates/QC_shortreads/trimmomatic/{sample}_run1_trimmomatic.paired.trim_1.fastq.gz*",
+    "intermediates/QC_shortreads/trimmomatic/{sample}_run1_trimmomatic.paired.trim_2.fastq.gz*",
+    "intermediates/QC_shortreads/remove_host/{sample}_run1_host_removed.unmapped_1.fastq.gz*",
+    "intermediates/QC_shortreads/remove_host/{sample}_run1_host_removed.unmapped_2.fastq.gz*",
     "intermediates/binning/phix_index",
 ]
 output = [
@@ -377,7 +385,10 @@ output = [
     "{config.out_dir}/QC_shortreads/remove_phix/{sample}_run1_phix_removed.bowtie2.log",
 ]
 description = "Remove phiX reads by bowtie2 mapping (upstream BOWTIE2_PHIX_REMOVAL_ALIGN)"
-depends_on = ["phix_build", "host_removal_align", "adapterremoval_pe", "trimmomatic"]
+# Explicit edges: the glob inputs above no longer string-match producers'
+# outputs (edges are exact-string match only), so the clip-tool producers
+# are named here to keep the ordering guarantee the inferred edges gave.
+depends_on = ["fastp", "phix_build", "host_removal_align", "adapterremoval_pe", "trimmomatic"]
 shell = """
 mkdir -p intermediates/QC_shortreads/remove_phix {config.out_dir}/QC_shortreads/remove_phix
 INDEX=`find -L intermediates/binning/phix_index -name "*.rev.1.bt2" | sed "s/\\.rev.1.bt2$//"`

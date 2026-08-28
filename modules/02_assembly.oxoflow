@@ -16,17 +16,21 @@ description = "nf-core/mag 5.5.0 02_assembly fragment"
 [[rules]]
 name = "spades"
 input = [
-    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
-    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz",
-    "intermediates/QC_shortreads/bbnorm/{sample}_1.nm.fastq.gz",
-    "intermediates/QC_shortreads/bbnorm/{sample}_2.nm.fastq.gz",
+    # Both read variants are optional globs: the shell prefers bbnorm when
+    # --bbnorm is on, else the phiX-removed reads — the inactive variant
+    # must not fail the resume input snapshot (see phix_align).
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz*",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz*",
+    "intermediates/QC_shortreads/bbnorm/{sample}_1.nm.fastq.gz*",
+    "intermediates/QC_shortreads/bbnorm/{sample}_2.nm.fastq.gz*",
 ]
 output = [
     "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa.gz",
     "{config.out_dir}/Assembly/SPAdes/SPAdes-{sample}.spades.log",
 ]
 description = "Metagenomic assembly with SPAdes (upstream SPADES; consumes the bbnorm-normalized reads when --bbnorm is on)"
-depends_on = ["bbnorm"]
+# phix_align: explicit edge for the globbed remove_phix inputs.
+depends_on = ["phix_align", "bbnorm"]
 shell = """
 wd=$(pwd)
 mkdir -p intermediates/assembly/SPAdes {config.out_dir}/Assembly/SPAdes
@@ -79,17 +83,19 @@ conda = "envs/spades.yaml"
 [[rules]]
 name = "megahit"
 input = [
-    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
-    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz",
-    "intermediates/QC_shortreads/bbnorm/{sample}_1.nm.fastq.gz",
-    "intermediates/QC_shortreads/bbnorm/{sample}_2.nm.fastq.gz",
+    # Both read variants are optional globs (see spades).
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz*",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz*",
+    "intermediates/QC_shortreads/bbnorm/{sample}_1.nm.fastq.gz*",
+    "intermediates/QC_shortreads/bbnorm/{sample}_2.nm.fastq.gz*",
 ]
 output = [
     "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa.gz",
     "{config.out_dir}/Assembly/MEGAHIT/MEGAHIT-{sample}.log",
 ]
 description = "Metagenomic assembly with MEGAHIT (upstream MEGAHIT; consumes the bbnorm-normalized reads when --bbnorm is on)"
-depends_on = ["bbnorm"]
+# phix_align: explicit edge for the globbed remove_phix inputs.
+depends_on = ["phix_align", "bbnorm"]
 shell = """
 wd=$(pwd)
 mkdir -p intermediates/assembly/MEGAHIT {config.out_dir}/Assembly/MEGAHIT
