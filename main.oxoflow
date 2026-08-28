@@ -33,7 +33,6 @@ name = "oxo-flow-mag"
 version = "1.0.0"
 description = "Metagenome assembly and binning: FastQC, fastp, phiX removal, SPAdes/MEGAHIT assembly, QUAST, PRODIGAL, bowtie2 mapping, binning (MetaBAT2/MaxBin2/CONCOCT/COMEBin/MetaBinner/SemiBin2), depths, BUSCO QC, GTDB-Tk classification, bin summary, PROKKA annotation, ALE, MultiQC"
 author = "oxo-flow-community"
-sample_group_name = "cohort"
 
 [config]
 # Input directory containing {sample}_R1.fastq.gz / {sample}_R2.fastq.gz
@@ -42,6 +41,13 @@ sample_group_name = "cohort"
 # fixtures; point this at your data.
 input_dir = "test/fixtures/raw"
 out_dir = "results"
+# Sheet-mode input (off by default): when reads_sheet is set to a TSV path,
+# it is loaded as [workflow].metadata_file and the sample set / per-sample
+# read files come from the sheet instead of {config.input_dir}. Sheet
+# columns: sample, short_reads_fastq1, short_reads_fastq2 (empty for
+# single-end / interleaved), short_reads_layout (pe | single | interleaved).
+# Empty (default) keeps the paired-end {sample}_R1/_R2 pattern untouched.
+reads_sheet = ""
 # phiX reference (upstream --phix_reference default =
 # projectDir/assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz)
 phix_reference = "assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz"
