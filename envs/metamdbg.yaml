@@ -1,0 +1,9 @@
+---
+# Environment for MetaMDBG — the upstream nf-core/mag 5.5.0 pin
+# (modules/nf-core/metamdbg/asm/environment.yml: bioconda::metamdbg=1.2).
+name: metamdbg
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::metamdbg=1.2

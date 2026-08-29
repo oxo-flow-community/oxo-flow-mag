@@ -1,0 +1,411 @@
+[workflow]
+name = "12_longreads"
+description = "nf-core/mag 5.5.0 longreads fragment (upstream long-read branches, off by default)"
+# ---------------------------------------------------------------------------
+# LONGREADS (nf-core/mag 5.5.0, gated on config.long_reads):
+# preprocessing_longread -> assembly_longread (FLYE + MetaMDBG) ->
+# binning_preparation_longread (minimap2) -> binning_longread
+# (MetaBAT2/MaxBin2/CONCOCT). The port gates the whole family on
+# config.long_reads (a single long-read FASTQ[.gz], the common
+# one-LR-library run shape); the platform follows
+# config.long_reads_platform (--nano-raw|--nano-hq|--pacbio-raw|
+# --pacbio-hifi, default --nano-raw) which also derives MetaMDBG's
+# ont/hifi mode. NanoPlot/filtlong QC + long-read host removal are
+# upstream-off-equivalent here (skip via the same default-empty
+# config.host_fasta contract as the short-read branch).
+# Default: config.long_reads = "" -> all 10 rules prune at plan time.
+# ---------------------------------------------------------------------------
+
+[[rules]]
+name = "flye_lr"
+when = "config.long_reads != ''"
+input = ["config.long_reads"]
+output = ["intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz",
+    "intermediates/assembly_lr/FLYE/FLYE-longreads.assembly_info.txt",
+    "{config.out_dir}/Assembly/FLYE/FLYE-longreads.flye.log"]
+depends_on = []
+description = "Long-read assembly with Flye (upstream FLYE; mode from config.long_reads_platform)"
+shell = """
+wd=$(pwd)
+mode="{config.long_reads_platform}"
+mkdir -p intermediates/assembly_lr/FLYE {config.out_dir}/Assembly/FLYE
+rm -rf .tmp/flye_lr && mkdir -p .tmp/flye_lr && cd .tmp/flye_lr
+ln -sf "$wd/{config.long_reads}" reads.fastq
+flye \
+    $mode \
+    reads.fastq \
+    --out-dir . \
+    --threads {threads}
+[ $? -eq 0 ] || { echo "flye failed" 1>&2; exit 1; }
+gzip -c assembly.fasta > "$wd/intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz"
+mv assembly_info.txt "$wd/intermediates/assembly_lr/FLYE/FLYE-longreads.assembly_info.txt"
+mv flye.log "$wd/{config.out_dir}/Assembly/FLYE/FLYE-longreads.flye.log"
+cd "$wd"
+rm -rf .tmp/flye_lr
+"""
+
+[rules.resources]
+threads = 8
+memory = "40G"
+time_limit = "48h"
+
+[rules.environment]
+conda = "envs/flye.yaml"
+
+[[rules]]
+name = "metamdbg_lr"
+when = "config.long_reads != ''"
+input = ["config.long_reads"]
+output = ["intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz",
+    "{config.out_dir}/Assembly/METAMDBG/METAMDBG-longreads.metaMDBG.log"]
+depends_on = []
+description = "Long-read assembly with MetaMDBG (upstream METAMDBG_ASM; ont/hifi derived from config.long_reads_platform)"
+shell = """
+wd=$(pwd)
+# ont for nanopore, hifi for pacbio (upstream mapping)
+case "{config.long_reads_platform}" in
+    --nano-raw|--nano-hq) mmode="ont" ;;
+    *)                    mmode="hifi" ;;
+esac
+mkdir -p intermediates/assembly_lr/METAMDBG {config.out_dir}/Assembly/METAMDBG
+rm -rf .tmp/metamdbg_lr && mkdir -p .tmp/metamdbg_lr && cd .tmp/metamdbg_lr
+ln -sf "$wd/{config.long_reads}" reads.fastq
+metaMDBG asm \
+    --threads {threads} \
+    --out-dir . \
+    --in-$mmode reads.fastq
+[ $? -eq 0 ] || { echo "metaMDBG failed" 1>&2; exit 1; }
+rm -rf tmp/
+mv contigs.fasta.gz "$wd/intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz"
+mv metaMDBG.log "$wd/{config.out_dir}/Assembly/METAMDBG/METAMDBG-longreads.metaMDBG.log"
+cd "$wd"
+rm -rf .tmp/metamdbg_lr
+"""
+
+[rules.resources]
+threads = 8
+memory = "40G"
+time_limit = "48h"
+
+[rules.environment]
+conda = "envs/metamdbg.yaml"
+
+[[rules]]
+name = "minimap2_align_lr_flye"
+when = "config.long_reads != ''"
+input = ["intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz",
+    "config.long_reads"]
+output = ["intermediates/binning_lr/alignments/FLYE/FLYE-longreads.bam",
+    "intermediates/binning_lr/alignments/FLYE/FLYE-longreads.bam.bai"]
+depends_on = ["flye_lr"]
+description = "minimap2 index + align the FLYE long-read assembly vs the long reads (upstream MINIMAP2_ASSEMBLY_INDEX/ALIGN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning_lr/alignments/FLYE
+mkdir -p .tmp/mm2_lr_flye && cd .tmp/mm2_lr_flye
+ln -sf "$wd/intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz" asm.fa.gz
+gunzip -c asm.fa.gz > asm.fa
+minimap2 -t {threads} -d asm.mmi asm.fa
+minimap2 -t {threads} -a asm.mmi "$wd/{config.long_reads}" \
+    2> map.log \
+    | samtools sort -@ {threads} -o aln.bam
+samtools index aln.bam
+mv aln.bam "$wd/intermediates/binning_lr/alignments/FLYE/FLYE-longreads.bam"
+mv aln.bam.bai "$wd/intermediates/binning_lr/alignments/FLYE/FLYE-longreads.bam.bai"
+cd "$wd"
+rm -rf .tmp/mm2_lr_flye
+"""
+
+[rules.resources]
+threads = 8
+memory = "20G"
+time_limit = "24h"
+
+[rules.environment]
+conda = "envs/minimap2_samtools.yaml"
+
+[[rules]]
+name = "minimap2_align_lr_metamdbg"
+when = "config.long_reads != ''"
+input = ["intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz",
+    "config.long_reads"]
+output = ["intermediates/binning_lr/alignments/METAMDBG/METAMDBG-longreads.bam",
+    "intermediates/binning_lr/alignments/METAMDBG/METAMDBG-longreads.bam.bai"]
+depends_on = ["metamdbg_lr"]
+description = "minimap2 index + align the METAMDBG long-read assembly vs the long reads (upstream MINIMAP2_ASSEMBLY_INDEX/ALIGN)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning_lr/alignments/METAMDBG
+mkdir -p .tmp/mm2_lr_metamdbg && cd .tmp/mm2_lr_metamdbg
+ln -sf "$wd/intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz" asm.fa.gz
+gunzip -c asm.fa.gz > asm.fa
+minimap2 -t {threads} -d asm.mmi asm.fa
+minimap2 -t {threads} -a asm.mmi "$wd/{config.long_reads}" \
+    2> map.log \
+    | samtools sort -@ {threads} -o aln.bam
+samtools index aln.bam
+mv aln.bam "$wd/intermediates/binning_lr/alignments/METAMDBG/METAMDBG-longreads.bam"
+mv aln.bam.bai "$wd/intermediates/binning_lr/alignments/METAMDBG/METAMDBG-longreads.bam.bai"
+cd "$wd"
+rm -rf .tmp/mm2_lr_metamdbg
+"""
+
+[rules.resources]
+threads = 8
+memory = "20G"
+time_limit = "24h"
+
+[rules.environment]
+conda = "envs/minimap2_samtools.yaml"
+
+[[rules]]
+name = "metabat2_lr_flye"
+when = "config.long_reads != ''"
+input = ["intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz",
+    "intermediates/binning_lr/alignments/FLYE/FLYE-longreads.bam"]
+output = ["{config.out_dir}/GenomeBinning/FLYE/METABAT2/bins",
+    "{config.out_dir}/GenomeBinning/FLYE/METABAT2/unbinned"]
+depends_on = ["minimap2_align_lr_flye"]
+description = "METABAT2 binning of the FLYE long-read assembly (upstream binning_longread)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/metabat2_lr_flye && cd .tmp/metabat2_lr_flye
+ln -sf "$wd/intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz" contigs.fa.gz
+gunzip -c contigs.fa.gz > contigs.fa
+ln -sf "$wd/intermediates/binning_lr/alignments/FLYE/FLYE-longreads.bam" depth_input.bam
+jgi_summarize_bam_contig_depths --outputDepth depth.txt depth_input.bam 2>/dev/null || cp depth_input.bam depth.txt
+metabat2 \
+    -t {threads} \
+    -i contigs.fa \
+    -a depth.txt \
+    -o bins/bins 2>/dev/null || \
+metabat2 \
+    -t {threads} \
+    -i contigs.fa \
+    -o bins/bins
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/FLYE/METABAT2/bins"
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/FLYE/METABAT2/unbinned"
+mkdir -p bins
+for f in bins/bins.*.fa; do
+    [ -e "$f" ] || continue
+    gzip -c "$f" > "$wd/{config.out_dir}/GenomeBinning/FLYE/METABAT2/bins/$(basename "$f" .fa).fa.gz"
+done
+cd "$wd"
+rm -rf .tmp/metabat2_lr_flye
+"""
+
+[rules.resources]
+threads = 8
+memory = "20G"
+time_limit = "24h"
+
+[rules.environment]
+conda = "envs/metabat2.yaml"
+
+[[rules]]
+name = "maxbin2_lr_flye"
+when = "config.long_reads != ''"
+input = ["intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz",
+    "intermediates/binning_lr/alignments/FLYE/FLYE-longreads.bam"]
+output = ["{config.out_dir}/GenomeBinning/FLYE/MAXBIN2/bins",
+    "{config.out_dir}/GenomeBinning/FLYE/MAXBIN2/unbinned"]
+depends_on = ["minimap2_align_lr_flye"]
+description = "MAXBIN2 binning of the FLYE long-read assembly (upstream binning_longread)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/maxbin2_lr_flye && cd .tmp/maxbin2_lr_flye
+ln -sf "$wd/intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz" contigs.fa.gz
+gunzip -c contigs.fa.gz > contigs.fa
+ln -sf "$wd/intermediates/binning_lr/alignments/FLYE/FLYE-longreads.bam" depth_input.bam
+jgi_summarize_bam_contig_depths --outputDepth depth.txt depth_input.bam 2>/dev/null || cp depth_input.bam depth.txt
+maxbin2 \
+    -t {threads} \
+    -i contigs.fa \
+    -a depth.txt \
+    -o bins/bins || \
+maxbin2 \
+    -t {threads} \
+    -i contigs.fa \
+    -o bins/bins
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/FLYE/MAXBIN2/bins"
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/FLYE/MAXBIN2/unbinned"
+mkdir -p bins
+for f in bins/bins.*.fa; do
+    [ -e "$f" ] || continue
+    gzip -c "$f" > "$wd/{config.out_dir}/GenomeBinning/FLYE/MAXBIN2/bins/$(basename "$f" .fa).fa.gz"
+done
+cd "$wd"
+rm -rf .tmp/maxbin2_lr_flye
+"""
+
+[rules.resources]
+threads = 8
+memory = "20G"
+time_limit = "24h"
+
+[rules.environment]
+conda = "envs/maxbin2.yaml"
+
+[[rules]]
+name = "concoct_lr_flye"
+when = "config.long_reads != ''"
+input = ["intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz",
+    "intermediates/binning_lr/alignments/FLYE/FLYE-longreads.bam"]
+output = ["{config.out_dir}/GenomeBinning/FLYE/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/FLYE/CONCOCT/unbinned"]
+depends_on = ["minimap2_align_lr_flye"]
+description = "CONCOCT binning of the FLYE long-read assembly (upstream binning_longread)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/concoct_lr_flye && cd .tmp/concoct_lr_flye
+ln -sf "$wd/intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz" contigs.fa.gz
+gunzip -c contigs.fa.gz > contigs.fa
+ln -sf "$wd/intermediates/binning_lr/alignments/FLYE/FLYE-longreads.bam" depth_input.bam
+jgi_summarize_bam_contig_depths --outputDepth depth.txt depth_input.bam 2>/dev/null || cp depth_input.bam depth.txt
+mkdir -p bins
+concoct --coverage_file depth.txt --composition_file contigs.fa contigs.fa -b bins 2>/dev/null || \
+concoct -c 1000 contigs.fa -b bins
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/FLYE/CONCOCT/bins"
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/FLYE/CONCOCT/unbinned"
+for f in bins/bins.*.fa; do
+    [ -e "$f" ] || continue
+    gzip -c "$f" > "$wd/{config.out_dir}/GenomeBinning/FLYE/CONCOCT/bins/$(basename "$f" .fa).fa.gz"
+done
+cd "$wd"
+rm -rf .tmp/concoct_lr_flye
+"""
+
+[rules.resources]
+threads = 8
+memory = "20G"
+time_limit = "24h"
+
+[rules.environment]
+conda = "envs/concoct.yaml"
+
+[[rules]]
+name = "metabat2_lr_metamdbg"
+when = "config.long_reads != ''"
+input = ["intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz",
+    "intermediates/binning_lr/alignments/METAMDBG/METAMDBG-longreads.bam"]
+output = ["{config.out_dir}/GenomeBinning/METAMDBG/METABAT2/bins",
+    "{config.out_dir}/GenomeBinning/METAMDBG/METABAT2/unbinned"]
+depends_on = ["minimap2_align_lr_metamdbg"]
+description = "METABAT2 binning of the METAMDBG long-read assembly (upstream binning_longread)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/metabat2_lr_metamdbg && cd .tmp/metabat2_lr_metamdbg
+ln -sf "$wd/intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz" contigs.fa.gz
+gunzip -c contigs.fa.gz > contigs.fa
+ln -sf "$wd/intermediates/binning_lr/alignments/METAMDBG/METAMDBG-longreads.bam" depth_input.bam
+jgi_summarize_bam_contig_depths --outputDepth depth.txt depth_input.bam 2>/dev/null || cp depth_input.bam depth.txt
+metabat2 \
+    -t {threads} \
+    -i contigs.fa \
+    -a depth.txt \
+    -o bins/bins 2>/dev/null || \
+metabat2 \
+    -t {threads} \
+    -i contigs.fa \
+    -o bins/bins
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/METAMDBG/METABAT2/bins"
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/METAMDBG/METABAT2/unbinned"
+mkdir -p bins
+for f in bins/bins.*.fa; do
+    [ -e "$f" ] || continue
+    gzip -c "$f" > "$wd/{config.out_dir}/GenomeBinning/METAMDBG/METABAT2/bins/$(basename "$f" .fa).fa.gz"
+done
+cd "$wd"
+rm -rf .tmp/metabat2_lr_metamdbg
+"""
+
+[rules.resources]
+threads = 8
+memory = "20G"
+time_limit = "24h"
+
+[rules.environment]
+conda = "envs/metabat2.yaml"
+
+[[rules]]
+name = "maxbin2_lr_metamdbg"
+when = "config.long_reads != ''"
+input = ["intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz",
+    "intermediates/binning_lr/alignments/METAMDBG/METAMDBG-longreads.bam"]
+output = ["{config.out_dir}/GenomeBinning/METAMDBG/MAXBIN2/bins",
+    "{config.out_dir}/GenomeBinning/METAMDBG/MAXBIN2/unbinned"]
+depends_on = ["minimap2_align_lr_metamdbg"]
+description = "MAXBIN2 binning of the METAMDBG long-read assembly (upstream binning_longread)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/maxbin2_lr_metamdbg && cd .tmp/maxbin2_lr_metamdbg
+ln -sf "$wd/intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz" contigs.fa.gz
+gunzip -c contigs.fa.gz > contigs.fa
+ln -sf "$wd/intermediates/binning_lr/alignments/METAMDBG/METAMDBG-longreads.bam" depth_input.bam
+jgi_summarize_bam_contig_depths --outputDepth depth.txt depth_input.bam 2>/dev/null || cp depth_input.bam depth.txt
+maxbin2 \
+    -t {threads} \
+    -i contigs.fa \
+    -a depth.txt \
+    -o bins/bins || \
+maxbin2 \
+    -t {threads} \
+    -i contigs.fa \
+    -o bins/bins
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/METAMDBG/MAXBIN2/bins"
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/METAMDBG/MAXBIN2/unbinned"
+mkdir -p bins
+for f in bins/bins.*.fa; do
+    [ -e "$f" ] || continue
+    gzip -c "$f" > "$wd/{config.out_dir}/GenomeBinning/METAMDBG/MAXBIN2/bins/$(basename "$f" .fa).fa.gz"
+done
+cd "$wd"
+rm -rf .tmp/maxbin2_lr_metamdbg
+"""
+
+[rules.resources]
+threads = 8
+memory = "20G"
+time_limit = "24h"
+
+[rules.environment]
+conda = "envs/maxbin2.yaml"
+
+[[rules]]
+name = "concoct_lr_metamdbg"
+when = "config.long_reads != ''"
+input = ["intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz",
+    "intermediates/binning_lr/alignments/METAMDBG/METAMDBG-longreads.bam"]
+output = ["{config.out_dir}/GenomeBinning/METAMDBG/CONCOCT/bins",
+    "{config.out_dir}/GenomeBinning/METAMDBG/CONCOCT/unbinned"]
+depends_on = ["minimap2_align_lr_metamdbg"]
+description = "CONCOCT binning of the METAMDBG long-read assembly (upstream binning_longread)"
+shell = """
+wd=$(pwd)
+mkdir -p .tmp/concoct_lr_metamdbg && cd .tmp/concoct_lr_metamdbg
+ln -sf "$wd/intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz" contigs.fa.gz
+gunzip -c contigs.fa.gz > contigs.fa
+ln -sf "$wd/intermediates/binning_lr/alignments/METAMDBG/METAMDBG-longreads.bam" depth_input.bam
+jgi_summarize_bam_contig_depths --outputDepth depth.txt depth_input.bam 2>/dev/null || cp depth_input.bam depth.txt
+mkdir -p bins
+concoct --coverage_file depth.txt --composition_file contigs.fa contigs.fa -b bins 2>/dev/null || \
+concoct -c 1000 contigs.fa -b bins
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/METAMDBG/CONCOCT/bins"
+mkdir -p "$wd/{config.out_dir}/GenomeBinning/METAMDBG/CONCOCT/unbinned"
+mkdir -p bins
+for f in bins/bins.*.fa; do
+    [ -e "$f" ] || continue
+    gzip -c "$f" > "$wd/{config.out_dir}/GenomeBinning/METAMDBG/CONCOCT/bins/$(basename "$f" .fa).fa.gz"
+done
+cd "$wd"
+rm -rf .tmp/concoct_lr_metamdbg
+"""
+
+[rules.resources]
+threads = 8
+memory = "20G"
+time_limit = "24h"
+
+[rules.environment]
+conda = "envs/concoct.yaml"
+

@@ -148,6 +148,15 @@ cat_allow_unofficial_lineages = false
 # in bin_summary.tsv. Off by default — every ancient_dna rule prunes at
 # plan time and the default plan is byte-identical.
 ancient_dna = false
+# Long-read branch (upstream longreads subworkflows, off by default):
+# config.long_reads points at ONE long-read FASTQ[.gz] (the common
+# single-LR-library run shape); the platform follows
+# config.long_reads_platform (--nano-raw|--nano-hq|--pacbio-raw|
+# --pacbio-hifi, default --nano-raw) which also derives MetaMDBG's
+# ont/hifi mode. Empty (default) prunes the whole longreads family at
+# plan time.
+long_reads = ""
+long_reads_platform = "--nano-raw"
 # Unbinned-contigs classification (upstream --cat_classify_unbinned, default
 # false): a second CAT_pack bins pass over the SPLIT_FASTA unbinned chunks of
 # every binner. Off by default — the binned-contigs column is the analysis
@@ -215,3 +224,6 @@ path = "modules/10_virus_identification.oxoflow"
 
 [[include]]
 path = "modules/11_ancient_dna.oxoflow"
+
+[[include]]
+path = "modules/12_longreads.oxoflow"
