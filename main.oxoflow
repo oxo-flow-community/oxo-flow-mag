@@ -31,6 +31,14 @@
 [workflow]
 name = "oxo-flow-mag"
 version = "1.0.0"
+# Points at the reads sheet by default so sheet-mode activation needs only
+# : metadata_file must be a [workflow] key (loaded at
+# parse time, before {meta.*} plan-time gating) — a --arg metadata_file
+# override arrives after parse and never reaches the metadata table.
+# Default mode (reads_sheet = "") leaves the metadata rows unused: every
+# {meta.*} gate bakes false at plan time and the paired-end byte plan is
+# unchanged.
+metadata_file = "test/fixtures/reads_sheet.tsv"
 description = "Metagenome assembly and binning: FastQC, fastp, phiX removal, SPAdes/MEGAHIT assembly, QUAST, PRODIGAL, bowtie2 mapping, binning (MetaBAT2/MaxBin2/CONCOCT/COMEBin/MetaBinner/SemiBin2), depths, BUSCO QC, GTDB-Tk classification, bin summary, PROKKA annotation, ALE, MultiQC"
 author = "oxo-flow-community"
 
@@ -154,7 +162,7 @@ cohort_samples = "S1 S2"
 
 [[sample_groups]]
 name = "cohort"
-samples = ["S1", "S2"]
+samples = ["S1", "S2", "SE1", "IL1"]
 
 [defaults]
 threads = 1
