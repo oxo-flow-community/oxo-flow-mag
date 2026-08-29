@@ -342,7 +342,6 @@
     "ancient_dna — dedicated upstream subworkflow (off by default); not portable without rewiring: it rewires the workflow at 8 points (skips host removal, phiX removal and assembly; adds pydamage damage correction and freebayes/bcftools SNP calling into the GTDB-Tk filter and bin summary), which would double the port's rule graph for a niche parameter",
     "cat_classify_unbinned — the CAT/BAT unbinned-contigs classification column (upstream --cat_classify_unbinned, default false): the ported CAT branch classifies binned contigs only; the unbinned column would add a second full CAT_pack pass over the chunked contigs, which are already classified by Tiara in the bin_domain_classification branch",
     "pydamage report page — part of the ancient DNA branch (not ported, see above); the CheckM2 and GUNC report pages are ported with their tools",
-    "BUSCO `*-busco.batch_summary.failed.txt` artifact — only produced by upstream when a BUSCO run fails; an error-only artifact, not an analysis output",
     "nf-core boilerplate files (pipeline_summary/methods_description, versions.yml) — not part of the analysis"
   ],
   "rule_count": 323,
