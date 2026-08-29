@@ -1,0 +1,9 @@
+---
+# Environment for pydamage — the upstream nf-core/mag 5.5.0 pin
+# (modules/nf-core/pydamage/analyze/environment.yml: bioconda::pydamage=1.0).
+name: pydamage
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::pydamage=1.0

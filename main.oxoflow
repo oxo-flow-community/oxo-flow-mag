@@ -142,6 +142,12 @@ gunc_db = ""
 # itself; db/ and tax/ directories are discovered inside it)
 cat_db = ""
 cat_allow_unofficial_lineages = false
+# Ancient DNA branch (upstream params.ancient_dna, default false): pydamage
+# damage assessment on the binning-prep alignments, freebayes/bcftools
+# consensus recall of the contigs, and a per-bin pydamage summary column
+# in bin_summary.tsv. Off by default — every ancient_dna rule prunes at
+# plan time and the default plan is byte-identical.
+ancient_dna = false
 # Unbinned-contigs classification (upstream --cat_classify_unbinned, default
 # false): a second CAT_pack bins pass over the SPLIT_FASTA unbinned chunks of
 # every binner. Off by default — the binned-contigs column is the analysis
@@ -206,3 +212,6 @@ path = "modules/09_catpack.oxoflow"
 
 [[include]]
 path = "modules/10_virus_identification.oxoflow"
+
+[[include]]
+path = "modules/11_ancient_dna.oxoflow"
