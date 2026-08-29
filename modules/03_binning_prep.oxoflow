@@ -15,6 +15,7 @@ description = "nf-core/mag 5.5.0 03_binning_prep fragment"
 # in intermediates; upstream keeps the index files in each task's workdir.
 [[rules]]
 name = "bowtie2_build_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
 output = [
     "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.1.bt2",
@@ -64,6 +65,7 @@ conda = "envs/bowtie2.yaml"
 # results/Assembly/{assembler}/QC/{sample}/.
 [[rules]]
 name = "bowtie2_align_spades"
+when = "config.reads_sheet == ''"
 input = [
     # file-level inputs (not the shared dirs): exact-string edges +
     # per-file manifests make re-runs propagate — the dir-only input
@@ -132,6 +134,7 @@ conda = "envs/bowtie2_samtools.yaml"
 
 [[rules]]
 name = "bowtie2_align_megahit"
+when = "config.reads_sheet == ''"
 input = [
     # file-level inputs (not the shared dirs): exact-string edges +
     # per-file manifests make re-runs propagate — the dir-only input
@@ -175,6 +178,142 @@ for r in {config.cohort_samples}; do
             2> ${name}.bowtie2.log | \\
         samtools view -@ {threads} -bS | \\
         samtools sort -@ {threads} -o ${name}.bam
+    samtools index ${name}.bam
+    # own-alignment log is renamed (upstream: if name == {asm}-{id}-{id})
+    if [ "$r" = "{sample}" ]; then
+        mv ${name}.bowtie2.log "MEGAHIT-{sample}.bowtie2.log"
+        mv "MEGAHIT-{sample}.bowtie2.log" "$wd/{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/"
+    else
+        mv ${name}.bowtie2.log "$wd/{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/"
+    fi
+    mv ${name}.bam ${name}.bam.bai "$wd/intermediates/binning/alignments/MEGAHIT/"
+done
+cd "$wd"
+rm -rf .tmp/align_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "12G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/bowtie2_samtools.yaml"
+
+# SHEET-MODE BOWTIE2_ASSEMBLY_ALIGN (SPAdes): one rule per assembly covering
+# every read set in the cohort (upstream group mode). PE rows map with the
+# concordant -1/-2 pair; single-end and interleaved rows map their single
+# stream with -U (upstream BOWTIE2_ASSEMBLY_ALIGN single-end branch - bowtie2
+# has no interleaved pair flag, so interleaved input is mapped per read).
+# Default mode: pruned at plan time (default plan byte-identical).
+[[rules]]
+name = "bowtie2_align_spades_sheet"
+when = "config.reads_sheet != '' && {meta.reads_1} != ''"
+input = [
+    "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.1.bt2",
+    "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.rev.1.bt2",
+]
+output = [
+    "intermediates/binning/alignments/SPAdes",
+    "{config.out_dir}/Assembly/SPAdes/QC/{sample}/SPAdes-{sample}.bowtie2.log",
+]
+depends_on = ["bowtie2_build_spades"]
+description = "Align all cohort reads against the SPAdes assembly from the reads sheet (upstream BOWTIE2_ASSEMBLY_ALIGN, group mode)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/alignments/SPAdes {config.out_dir}/Assembly/SPAdes/QC/{sample}
+mkdir -p .tmp/align_spades_{sample} && cd .tmp/align_spades_{sample}
+ln -sf "$wd/intermediates/binning/assembly_index/SPAdes" index
+INDEX=$(find -L ./ -name "SPAdes-{sample}*.rev.1.bt2l" -o -name "SPAdes-{sample}*.rev.1.bt2" | sed 's/.rev.1.bt2l//' | sed 's/.rev.1.bt2//')
+[ -z "$INDEX" ] && echo "Bowtie2 index files not found" 1>&2 && exit 1
+for r in {config.cohort_samples}; do
+    name="SPAdes-{sample}-$r"
+    if [ -s "$wd/intermediates/QC_shortreads/remove_phix/${r}_run1_phix_removed_2.unmapped.fastq.gz" ]; then
+        # pe row: concordant -1/-2 (upstream paired branch)
+        bowtie2 -p {threads} \
+                -x "$INDEX" \
+                -1 "$wd/intermediates/QC_shortreads/remove_phix/${r}_run1_phix_removed_1.unmapped.fastq.gz" \
+                -2 "$wd/intermediates/QC_shortreads/remove_phix/${r}_run1_phix_removed_2.unmapped.fastq.gz" \
+                2> ${name}.bowtie2.log | \
+            samtools view -@ {threads} -bS | \
+            samtools sort -@ {threads} -o ${name}.bam
+    else
+        # single/interleaved row: single-read mapping (upstream -U branch)
+        bowtie2 -p {threads} \
+                -x "$INDEX" \
+                -U "$wd/intermediates/QC_shortreads/remove_phix/${r}_run1_phix_removed_1.unmapped.fastq.gz" \
+                2> ${name}.bowtie2.log | \
+            samtools view -@ {threads} -bS | \
+            samtools sort -@ {threads} -o ${name}.bam
+    fi
+    samtools index ${name}.bam
+    # own-alignment log is renamed (upstream: if name == {asm}-{id}-{id})
+    if [ "$r" = "{sample}" ]; then
+        mv ${name}.bowtie2.log "SPAdes-{sample}.bowtie2.log"
+        mv "SPAdes-{sample}.bowtie2.log" "$wd/{config.out_dir}/Assembly/SPAdes/QC/{sample}/"
+    else
+        mv ${name}.bowtie2.log "$wd/{config.out_dir}/Assembly/SPAdes/QC/{sample}/"
+    fi
+    mv ${name}.bam ${name}.bam.bai "$wd/intermediates/binning/alignments/SPAdes/"
+done
+cd "$wd"
+rm -rf .tmp/align_spades_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "12G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/bowtie2_samtools.yaml"
+
+# SHEET-MODE BOWTIE2_ASSEMBLY_ALIGN (MEGAHIT): one rule per assembly covering
+# every read set in the cohort (upstream group mode). PE rows map with the
+# concordant -1/-2 pair; single-end and interleaved rows map their single
+# stream with -U (upstream BOWTIE2_ASSEMBLY_ALIGN single-end branch - bowtie2
+# has no interleaved pair flag, so interleaved input is mapped per read).
+# Default mode: pruned at plan time (default plan byte-identical).
+[[rules]]
+name = "bowtie2_align_megahit_sheet"
+when = "config.reads_sheet != '' && {meta.reads_1} != ''"
+input = [
+    "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.1.bt2",
+    "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.rev.1.bt2",
+]
+output = [
+    "intermediates/binning/alignments/MEGAHIT",
+    "{config.out_dir}/Assembly/MEGAHIT/QC/{sample}/MEGAHIT-{sample}.bowtie2.log",
+]
+depends_on = ["bowtie2_build_megahit"]
+description = "Align all cohort reads against the MEGAHIT assembly from the reads sheet (upstream BOWTIE2_ASSEMBLY_ALIGN, group mode)"
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/binning/alignments/MEGAHIT {config.out_dir}/Assembly/MEGAHIT/QC/{sample}
+mkdir -p .tmp/align_megahit_{sample} && cd .tmp/align_megahit_{sample}
+ln -sf "$wd/intermediates/binning/assembly_index/MEGAHIT" index
+INDEX=$(find -L ./ -name "MEGAHIT-{sample}*.rev.1.bt2l" -o -name "MEGAHIT-{sample}*.rev.1.bt2" | sed 's/.rev.1.bt2l//' | sed 's/.rev.1.bt2//')
+[ -z "$INDEX" ] && echo "Bowtie2 index files not found" 1>&2 && exit 1
+for r in {config.cohort_samples}; do
+    name="MEGAHIT-{sample}-$r"
+    if [ -s "$wd/intermediates/QC_shortreads/remove_phix/${r}_run1_phix_removed_2.unmapped.fastq.gz" ]; then
+        # pe row: concordant -1/-2 (upstream paired branch)
+        bowtie2 -p {threads} \
+                -x "$INDEX" \
+                -1 "$wd/intermediates/QC_shortreads/remove_phix/${r}_run1_phix_removed_1.unmapped.fastq.gz" \
+                -2 "$wd/intermediates/QC_shortreads/remove_phix/${r}_run1_phix_removed_2.unmapped.fastq.gz" \
+                2> ${name}.bowtie2.log | \
+            samtools view -@ {threads} -bS | \
+            samtools sort -@ {threads} -o ${name}.bam
+    else
+        # single/interleaved row: single-read mapping (upstream -U branch)
+        bowtie2 -p {threads} \
+                -x "$INDEX" \
+                -U "$wd/intermediates/QC_shortreads/remove_phix/${r}_run1_phix_removed_1.unmapped.fastq.gz" \
+                2> ${name}.bowtie2.log | \
+            samtools view -@ {threads} -bS | \
+            samtools sort -@ {threads} -o ${name}.bam
+    fi
     samtools index ${name}.bam
     # own-alignment log is renamed (upstream: if name == {asm}-{id}-{id})
     if [ "$r" = "{sample}" ]; then

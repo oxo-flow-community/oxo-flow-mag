@@ -42,11 +42,20 @@ author = "oxo-flow-community"
 input_dir = "test/fixtures/raw"
 out_dir = "results"
 # Sheet-mode input (off by default): when reads_sheet is set to a TSV path,
-# it is loaded as [workflow].metadata_file and the sample set / per-sample
-# read files come from the sheet instead of {config.input_dir}. Sheet
-# columns: sample, short_reads_fastq1, short_reads_fastq2 (empty for
-# single-end / interleaved), short_reads_layout (pe | single | interleaved).
-# Empty (default) keeps the paired-end {sample}_R1/_R2 pattern untouched.
+# it is loaded as [workflow].metadata_file (per-sample read paths + layout)
+# and the paired-end {sample}_R1/_R2 rules are replaced by per-layout sheet
+# rules (see modules/01_preprocessing.oxoflow / 02_assembly.oxoflow). Sheet
+# columns: sample, reads_1, reads_2 (empty for single-end / interleaved),
+# reads_layout (pe | single | interleaved).
+# The sample set still comes from [[sample_groups]] below (the engine treats
+# metadata_file as a lookup only) — point both at your sheet's samples, or
+# pass --samples S1,S2,.... Empty (default) keeps the paired-end
+# {sample}_R1/_R2 pattern untouched (byte-identical plan).
+# Example sheet (test/fixtures/reads_sheet.tsv ships one):
+#   sample  short_reads_fastq1              short_reads_fastq2              short_reads_layout
+#   S1      test/fixtures/raw/S1_R1.fastq.gz test/fixtures/raw/S1_R2.fastq.gz pe
+#   SE1     test/fixtures/raw/S1_R1.fastq.gz                                 single
+#   IL1     test/fixtures/interleaved_IL1.fastq.gz                           interleaved
 reads_sheet = ""
 # phiX reference (upstream --phix_reference default =
 # projectDir/assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz)

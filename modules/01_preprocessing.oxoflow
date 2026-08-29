@@ -19,6 +19,7 @@ description = "nf-core/mag 5.5.0 01_preprocessing fragment"
 # FASTQC_RAW (label process_low, ext.args '--quiet', prefix {id}_run{run}_raw)
 [[rules]]
 name = "fastqc_raw"
+when = "config.reads_sheet == ''"
 input = [
     "{config.input_dir}/{sample}_R1.fastq.gz",
     "{config.input_dir}/{sample}_R2.fastq.gz",
@@ -54,11 +55,221 @@ time_limit = "4h"
 [rules.environment]
 conda = "envs/fastqc.yaml"
 
+# SHEET-MODE FASTQC_TRIMMED (reads_sheet): single/interleaved rows have one
+# phiX-removed stream; FastQC runs on it and the _2 html mirrors it (upstream
+# FASTQC_TRIMMED on a single-end channel emits one html).
+# Default mode: pruned at plan time.
+[[rules]]
+name = "fastqc_trimmed_sheet"
+when = "config.reads_sheet != '' && {meta.reads_2} == ''"
+input = ["intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz"]
+output = [
+    "{config.out_dir}/QC_shortreads/fastqc/{sample}_run1_trimmed_1_fastqc.html",
+    "{config.out_dir}/QC_shortreads/fastqc/{sample}_run1_trimmed_2_fastqc.html",
+]
+description = "Run FastQC on the phiX-removed reads from the reads sheet (upstream FASTQC_TRIMMED, single/interleaved branch)"
+shell = """
+mkdir -p {config.out_dir}/QC_shortreads/fastqc
+ln -sf {input[0]} {sample}_run1_trimmed_1.fastq.gz
+ln -sf {input[0]} {sample}_run1_trimmed_2.fastq.gz
+fastqc \
+    --quiet \
+    --threads {threads} \
+    --memory $(( {effective_memory_mb} / 4 )) \
+    {sample}_run1_trimmed_1.fastq.gz
+mv {sample}_run1_trimmed_1_fastqc.html {output[0]}
+cp {output[0]} {output[1]}
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/fastqc.yaml"
+
+# SHEET-MODE FASTQC_RAW (reads_sheet): read paths come from the sheet via
+# {meta.*}; paired rows symlink both columns, single/interleaved rows point
+# both prefix names at the single stream so the MultiQC naming contract holds.
+# Default mode: no metadata rows -> pruned at plan time (plan byte-identical).
+[[rules]]
+name = "fastqc_raw_sheet"
+when = "config.reads_sheet != '' && {meta.reads_1} != ''"
+input = ["{meta.reads_1}", "{meta.reads_2}"]
+output = [
+    "{config.out_dir}/QC_shortreads/fastqc/{sample}_run1_raw_1_fastqc.html",
+    "{config.out_dir}/QC_shortreads/fastqc/{sample}_run1_raw_2_fastqc.html",
+]
+description = "Run FastQC on the raw reads from the reads sheet (upstream FASTQC_RAW)"
+optional = "any"
+shell = """
+mkdir -p {config.out_dir}/QC_shortreads/fastqc
+ln -sf {input[0]} {sample}_run1_raw_1.fastq.gz
+if [ -n "{input[1]}" ]; then
+    ln -sf {input[1]} {sample}_run1_raw_2.fastq.gz
+else
+    ln -sf {input[0]} {sample}_run1_raw_2.fastq.gz
+fi
+fastqc \
+    --quiet \
+    --threads {threads} \
+    --memory $(( {effective_memory_mb} / 4 )) \
+    {sample}_run1_raw_1.fastq.gz \
+    {sample}_run1_raw_2.fastq.gz
+mv {sample}_run1_raw_1_fastqc.html {output[0]}
+mv {sample}_run1_raw_2_fastqc.html {output[1]}
+# the fastqc zip archives stay in the rule scratch dir: upstream FASTQC_RAW
+# publishes *.html only (conf/modules.config)
+"""
+
+[rules.resources]
+threads = 2
+memory = "12G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/fastqc.yaml"
+
+# SHEET-MODE FASTP (reads_sheet). Sheet mode keeps the upstream per-layout
+# module behavior: paired rows run the default `fastp` rule byte-for-byte;
+# single-end and interleaved rows run this variant — one input stream,
+# interleaved rows add --interleaved_in (upstream fastp module treats
+# interleaved as single-ended with the caller passing --interleaved_in),
+# and the output is a single _1-suffixed stream (upstream out_fq1 form).
+# Default mode: no metadata rows exist, so {meta.reads_2} renders '' and
+# every instance of these rules is pruned at plan time — the default
+# dry-run stays byte-identical.
+[[rules]]
+name = "fastp_sheet"
+when = "config.reads_sheet != '' && {meta.reads_2} != '' && config.clip_tool == 'fastp'"
+input = ["{meta.reads_1}", "{meta.reads_2}"]
+output = [
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_1.fastp.fastq.gz",
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_2.fastp.fastq.gz",
+    "{config.out_dir}/QC_shortreads/fastp/{sample}/{sample}_run1_fastp.fastp.json",
+    "{config.out_dir}/QC_shortreads/fastp/{sample}/{sample}_run1_fastp.fastp.html",
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp.fastp.log",
+]
+description = "Adapter and quality trimming with fastp from the reads sheet (upstream FASTP, paired layout)"
+shell = """
+mkdir -p intermediates/QC_shortreads/fastp {config.out_dir}/QC_shortreads/fastp/{sample}
+ln -sf {input[0]} {sample}_run1_fastp_1.fastq.gz
+ln -sf {input[1]} {sample}_run1_fastp_2.fastq.gz
+if [ "{config.fastp_trim_polyg}" = "true" ]; then
+    fastp_polyg="--trim_poly_g"
+else
+    fastp_polyg=""
+fi
+fastp \
+    --in1 {sample}_run1_fastp_1.fastq.gz \
+    --in2 {sample}_run1_fastp_2.fastq.gz \
+    --out1 {sample}_run1_fastp_1.fastp.fastq.gz \
+    --out2 {sample}_run1_fastp_2.fastp.fastq.gz \
+    --json {sample}_run1_fastp.fastp.json \
+    --html {sample}_run1_fastp.fastp.html \
+    --thread {threads} \
+    --detect_adapter_for_pe \
+    -q {config.fastp_qualified_quality} \
+    --cut_front \
+    --cut_tail \
+    --cut_mean_quality {config.fastp_cut_mean_quality} \
+    --length_required {config.reads_minlength} \
+    $fastp_polyg \
+    2> {sample}_run1_fastp.fastp.log
+mv {sample}_run1_fastp_1.fastp.fastq.gz intermediates/QC_shortreads/fastp/
+mv {sample}_run1_fastp_2.fastp.fastq.gz intermediates/QC_shortreads/fastp/
+mv {sample}_run1_fastp.fastp.json {config.out_dir}/QC_shortreads/fastp/{sample}/
+mv {sample}_run1_fastp.fastp.html {config.out_dir}/QC_shortreads/fastp/{sample}/
+mv {sample}_run1_fastp.fastp.log intermediates/QC_shortreads/fastp/
+"""
+
+[rules.resources]
+threads = 6
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/fastp.yaml"
+
+# SHEET-MODE FASTP single/interleaved variant: one declared read file (the
+# sheet's short_reads_fastq2 column is empty), one output stream kept at the
+# SAME internal _1 path the downstream rules consume. Interleaved rows pass
+# --interleaved_in per the upstream fastp module (ext.args injection).
+[[rules]]
+name = "fastp_single_sheet"
+when = "config.reads_sheet != '' && {meta.reads_2} == '' && config.clip_tool == 'fastp'"
+input = ["{meta.reads_1}"]
+output = [
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_1.fastp.fastq.gz",
+    "{config.out_dir}/QC_shortreads/fastp/{sample}/{sample}_run1_fastp.fastp.json",
+    "{config.out_dir}/QC_shortreads/fastp/{sample}/{sample}_run1_fastp.fastp.html",
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp.fastp.log",
+]
+description = "Adapter and quality trimming with fastp from the reads sheet (single-end / interleaved layout)"
+shell = """
+mkdir -p intermediates/QC_shortreads/fastp {config.out_dir}/QC_shortreads/fastp/{sample}
+ln -sf {input[0]} {sample}_run1_fastp_1.fastq.gz
+if [ "{config.fastp_trim_polyg}" = "true" ]; then
+    fastp_polyg="--trim_poly_g"
+else
+    fastp_polyg=""
+fi
+# interleaved rows carry layout=interleaved in the sheet -> --interleaved_in.
+# fastp 1.0.1 requires --out2 when --interleaved_in is combined with --out1,
+# so the interleaved branch mirrors the upstream module exactly: fastp
+# --stdout (interleaved output) piped through gzip into the single stream
+# file; single-end rows take the plain --out1 form.
+if [ "{meta.reads_layout}" = "interleaved" ]; then
+    fastp \
+        --stdout \
+        --in1 {sample}_run1_fastp_1.fastq.gz \
+        --json {sample}_run1_fastp.fastp.json \
+        --html {sample}_run1_fastp.fastp.html \
+        --thread {threads} \
+        --interleaved_in \
+        -q {config.fastp_qualified_quality} \
+        --cut_front \
+        --cut_tail \
+        --cut_mean_quality {config.fastp_cut_mean_quality} \
+        --length_required {config.reads_minlength} \
+        $fastp_polyg \
+        2> {sample}_run1_fastp.fastp.log \
+    | gzip -c > {sample}_run1_fastp_1.fastp.fastq.gz
+else
+    fastp \
+        --in1 {sample}_run1_fastp_1.fastq.gz \
+        --out1 {sample}_run1_fastp_1.fastp.fastq.gz \
+        --json {sample}_run1_fastp.fastp.json \
+        --html {sample}_run1_fastp.fastp.html \
+        --thread {threads} \
+        -q {config.fastp_qualified_quality} \
+        --cut_front \
+        --cut_tail \
+        --cut_mean_quality {config.fastp_cut_mean_quality} \
+        --length_required {config.reads_minlength} \
+        $fastp_polyg \
+        2> {sample}_run1_fastp.fastp.log
+fi
+mv {sample}_run1_fastp_1.fastp.fastq.gz intermediates/QC_shortreads/fastp/
+mv {sample}_run1_fastp.fastp.json {config.out_dir}/QC_shortreads/fastp/{sample}/
+mv {sample}_run1_fastp.fastp.html {config.out_dir}/QC_shortreads/fastp/{sample}/
+mv {sample}_run1_fastp.fastp.log intermediates/QC_shortreads/fastp/
+"""
+
+[rules.resources]
+threads = 6
+memory = "8G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/fastp.yaml"
+
 # FASTP (label process_medium + 8GB override, prefix {id}_run{run}_fastp;
 # upstream default clip_tool=fastp, so the gate is on by default)
 [[rules]]
 name = "fastp"
-when = "config.clip_tool == 'fastp'"
+when = "config.clip_tool == 'fastp' && config.reads_sheet == ''"
 input = [
     "{config.input_dir}/{sample}_R1.fastq.gz",
     "{config.input_dir}/{sample}_R2.fastq.gz",
@@ -363,6 +574,7 @@ conda = "envs/bowtie2.yaml"
 # BOWTIE2_PHIX_REMOVAL_ALIGN (8 cpu / 2 GB override, prefix {id}_run{run}_phix_removed)
 [[rules]]
 name = "phix_align"
+when = "config.reads_sheet == '' || {meta.reads_2} != ''"
 input = [
     # All clipped-read candidates are optional globs: exactly one clip
     # variant materializes per clip_tool value, and the resume manifest must
@@ -434,6 +646,68 @@ time_limit = "6h"
 [rules.environment]
 conda = "envs/bowtie2.yaml"
 
+# SHEET-MODE BOWTIE2_PHIX_REMOVAL_ALIGN for single/interleaved rows
+# (reads_sheet): the PE chain (fastp dual files -> bowtie2 -1/-2 --un-conc-gz)
+# is the default `phix_align` rule, byte-identical. Single/interleaved rows
+# have ONE read stream, so this variant mirrors the upstream
+# BOWTIE2_REMOVAL_ALIGN single-end branch: bowtie2 -U ... --un-gz
+# (single read output, not the concordant pair), then the trimmed reads are
+# split back into the SAME {sample}_run1_phix_removed_1/_2 names so every
+# downstream consumer (fastqc_trimmed, bbnorm, spades, megahit,
+# bowtie2_align_*) keeps its existing wiring. For single-end rows the _2 file
+# is an empty gz placeholder; for interleaved rows both names carry the same
+# interleaved stream (assembled with --interleaved/--12 further down).
+[[rules]]
+name = "phix_align_sheet"
+when = "config.reads_sheet != '' && {meta.reads_2} == ''"
+input = [
+    "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_1.fastp.fastq.gz",
+    "intermediates/binning/phix_index",
+]
+output = [
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz",
+    "{config.out_dir}/QC_shortreads/remove_phix/{sample}_run1_phix_removed.bowtie2.log",
+]
+description = "Remove phiX reads by bowtie2 mapping from the reads sheet (upstream BOWTIE2_PHIX_REMOVAL_ALIGN, single/interleaved branch)"
+depends_on = ["fastp_single_sheet", "phix_build"]
+shell = """
+mkdir -p intermediates/QC_shortreads/remove_phix {config.out_dir}/QC_shortreads/remove_phix
+INDEX=`find -L intermediates/binning/phix_index -name "*.rev.1.bt2" | sed "s/\\.rev.1.bt2$//"`
+[ -z "$INDEX" ] && INDEX=`find -L intermediates/binning/phix_index -name "*.rev.1.bt2l" | sed "s/\\.rev.1.bt2l$//"`
+[ -z "$INDEX" ] && echo "Bowtie2 index files not found" 1>&2 && exit 1
+# upstream single-end branch: bowtie2 -U with --un-gz (single unmapped output)
+bowtie2 -p {threads} \
+        -x "$INDEX" \
+        -U intermediates/QC_shortreads/fastp/{sample}_run1_fastp_1.fastp.fastq.gz \
+        --un-gz {sample}_run1_phix_removed.unmapped.fastq.gz \
+        --al-gz {sample}_run1_phix_removed.mapped.fastq.gz \
+        1> /dev/null \
+        2> {sample}_run1_phix_removed.bowtie2.log
+rm -f {sample}_run1_phix_removed.mapped.fastq.gz
+# downstream rules consume the _1/_2 name pair: interleaved rows keep the
+# same interleaved stream under both names; single-end rows emit an empty
+# gz under _2 so glob/manifest checks stay satisfied
+if [ "{meta.reads_layout}" = "interleaved" ]; then
+    cp {sample}_run1_phix_removed.unmapped.fastq.gz {sample}_run1_phix_removed_1.unmapped.fastq.gz
+    : > {sample}_run1_phix_removed_2.unmapped.fastq.gz
+else
+    cp {sample}_run1_phix_removed.unmapped.fastq.gz {sample}_run1_phix_removed_1.unmapped.fastq.gz
+    : > {sample}_run1_phix_removed_2.unmapped.fastq.gz
+fi
+mv {sample}_run1_phix_removed_1.unmapped.fastq.gz intermediates/QC_shortreads/remove_phix/
+mv {sample}_run1_phix_removed_2.unmapped.fastq.gz intermediates/QC_shortreads/remove_phix/
+mv {sample}_run1_phix_removed.bowtie2.log {config.out_dir}/QC_shortreads/remove_phix/
+"""
+
+[rules.resources]
+threads = 8
+memory = "2G"
+time_limit = "6h"
+
+[rules.environment]
+conda = "envs/bowtie2.yaml"
+
 # BBMAP_BBNORM (--bbnorm; runs on the phiX-removed reads, feeds the assembly)
 [[rules]]
 name = "bbnorm"
@@ -479,6 +753,7 @@ conda = "envs/bbmap.yaml"
 # FASTQC_TRIMMED (label process_low, ext.args '--quiet', prefix {id}_run{run}_trimmed)
 [[rules]]
 name = "fastqc_trimmed"
+when = "config.reads_sheet == '' || {meta.reads_2} != ''"
 input = [
     "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
     "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz",

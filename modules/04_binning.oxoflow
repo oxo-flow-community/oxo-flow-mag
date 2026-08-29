@@ -20,6 +20,7 @@ description = "nf-core/mag 5.5.0 04_binning fragment"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "depths_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     # the bam files, not the dir: exact-string edges from the align
     # rule + per-file manifests propagate re-runs (live: a dir-only
@@ -92,6 +93,7 @@ conda = "envs/mag_depths.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "convert_depths_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz"]
 output = ["intermediates/binning/maxbin2_abund/SPAdes"]
 depends_on = ["depths_spades"]
@@ -182,6 +184,7 @@ conda = "envs/bioawk.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "metabat2_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
     "intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz",
@@ -333,6 +336,7 @@ conda = "envs/metabat2.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "maxbin2_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
     "intermediates/binning/maxbin2_abund/SPAdes",
@@ -482,6 +486,7 @@ conda = "envs/maxbin2.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "concoct_cutup_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
 output = [
     "intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.fasta",
@@ -538,6 +543,7 @@ conda = "envs/concoct.yaml"
 
 [[rules]]
 name = "concoct_table_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.bed",
     "intermediates/binning/alignments/SPAdes",
@@ -590,6 +596,7 @@ conda = "envs/concoct.yaml"
 
 [[rules]]
 name = "concoct_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.tsv",
     "intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.fasta",
@@ -642,6 +649,7 @@ conda = "envs/concoct.yaml"
 
 [[rules]]
 name = "concoct_merge_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}_clustering_gt1000.csv"]
 output = [
     "intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.csv",
@@ -702,6 +710,7 @@ conda = "envs/concoct.yaml"
 
 [[rules]]
 name = "concoct_extract_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
     "intermediates/binning/concoct/{sample}/SPAdes-CONCOCT-{sample}.csv",
@@ -777,6 +786,7 @@ conda = "envs/concoct.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "comebin_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
     "intermediates/binning/alignments/SPAdes",
@@ -874,6 +884,7 @@ conda = "envs/comebin.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "metabinner_kmer_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
 output = ["intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}_kmer_4_f{config.min_contig_size}.csv.gz"]
 description = "4-mer composition profile of the SPAdes assembly (upstream METABINNER_KMER)"
@@ -926,6 +937,7 @@ conda = "envs/metabinner.yaml"
 
 [[rules]]
 name = "metabinner_tooshort_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
 output = ["intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}.{config.min_contig_size}.fa"]
 description = "Remove too-short contigs from the SPAdes assembly (upstream METABINNER_TOOSHORT)"
@@ -978,6 +990,7 @@ conda = "envs/metabinner.yaml"
 
 [[rules]]
 name = "metabinner_run_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}.{config.min_contig_size}.fa",
     "intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}_kmer_4_f{config.min_contig_size}.csv.gz",
@@ -1077,6 +1090,7 @@ conda = "envs/metabinner.yaml"
 
 [[rules]]
 name = "metabinner_bins_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
     "intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}.tsv.gz",
@@ -1174,6 +1188,7 @@ conda = "envs/metabinner.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "semibin_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
     "intermediates/binning/alignments/SPAdes",
@@ -1291,6 +1306,7 @@ conda = "envs/semibin.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "seqkit_spades_metabat2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["{config.out_dir}/GenomeBinning/MetaBAT2/bins"]
 output = ["intermediates/binning/seqkit/SPAdes-MetaBAT2-{sample}.tsv"]
 depends_on = ["metabat2_spades"]
@@ -1343,6 +1359,7 @@ conda = "envs/seqkit.yaml"
 
 [[rules]]
 name = "seqkit_spades_maxbin2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["{config.out_dir}/GenomeBinning/MaxBin2/bins"]
 output = ["intermediates/binning/seqkit/SPAdes-MaxBin2-{sample}.tsv"]
 depends_on = ["maxbin2_spades"]
@@ -1395,6 +1412,7 @@ conda = "envs/seqkit.yaml"
 
 [[rules]]
 name = "seqkit_spades_concoct"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["{config.out_dir}/GenomeBinning/CONCOCT/bins"]
 output = ["intermediates/binning/seqkit/SPAdes-CONCOCT-{sample}.tsv"]
 depends_on = ["concoct_extract_spades"]
@@ -1447,6 +1465,7 @@ conda = "envs/seqkit.yaml"
 
 [[rules]]
 name = "seqkit_spades_comebin"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["{config.out_dir}/GenomeBinning/COMEBin/bins"]
 output = ["intermediates/binning/seqkit/SPAdes-COMEBin-{sample}.tsv"]
 depends_on = ["comebin_spades"]
@@ -1499,6 +1518,7 @@ conda = "envs/seqkit.yaml"
 
 [[rules]]
 name = "seqkit_spades_metabinner"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["{config.out_dir}/GenomeBinning/MetaBinner/bins"]
 output = ["intermediates/binning/seqkit/SPAdes-MetaBinner-{sample}.tsv"]
 depends_on = ["metabinner_bins_spades"]
@@ -1551,6 +1571,7 @@ conda = "envs/seqkit.yaml"
 
 [[rules]]
 name = "seqkit_spades_semibin"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["{config.out_dir}/GenomeBinning/SemiBin2/bins"]
 output = ["intermediates/binning/seqkit/SPAdes-SemiBin2-{sample}.tsv"]
 depends_on = ["semibin_spades"]
@@ -1611,6 +1632,7 @@ conda = "envs/seqkit.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "split_fasta_metabat2_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["intermediates/binning/metabat2/{sample}/SPAdes-MetaBAT2-{sample}.unbinned.fa.gz"]
 output = [
     "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
@@ -1683,6 +1705,7 @@ conda = "envs/split_fasta.yaml"
 
 [[rules]]
 name = "split_fasta_maxbin2_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["intermediates/binning/maxbin2/{sample}/SPAdes-MaxBin2-{sample}.noclass.gz"]
 output = [
     "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
@@ -1755,6 +1778,7 @@ conda = "envs/split_fasta.yaml"
 
 [[rules]]
 name = "split_fasta_metabinner_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["intermediates/binning/metabinner/{sample}/SPAdes-MetaBinner-{sample}.unbinned.fa.gz"]
 output = [
     "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
