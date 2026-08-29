@@ -336,12 +336,11 @@
     "trimmomatic"
   ],
   "excluded": [
-    "longreads — long-read assemblies (Flye/MetaMDBG) and long-read binning; not portable: the upstream longreads subworkflow would double the whole binning graph (every assembler x binner x sample) and needs long-read input files the paired-end {sample}_R1/_R2 input model does not provide",
     "kaiju — taxonomic profiling with kaiju; not portable: the process is absent from upstream nf-core/mag 5.5.0 entirely (removed upstream), so there is no module script to translate",
     "diamond — taxonomic profiling with diamond; same as kaiju: absent from upstream 5.5.0, no module script to translate",
     "nf-core boilerplate files (pipeline_summary/methods_description, versions.yml) — not part of the analysis"
   ],
-  "rule_count": 342,
+  "rule_count": 352,
   "tools": [
     "adapterremoval",
     "ale",
