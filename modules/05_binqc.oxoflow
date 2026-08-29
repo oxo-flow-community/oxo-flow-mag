@@ -67,9 +67,15 @@ run_busco() {
         mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
     else
         touch {sample}-auto-busco.batch_summary.txt
+        # upstream BUSCO_BUSCO: a run that never produced a batch summary
+        # leaves the *.batch_summary.failed.txt error artifact (and exits
+        # non-zero at the process level; here the empty summary is the
+        # failure marker consumers already handle).
+        cp {sample}-auto-busco.batch_summary.txt {sample}-auto-busco.batch_summary.failed.txt
     fi
     mkdir -p "$wd/$2"
     mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    [ -f {sample}-auto-busco.batch_summary.failed.txt ] && mv {sample}-auto-busco.batch_summary.failed.txt "$wd/$2/" || true
     mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
     mv short_summary.* "$wd/$2/" 2>/dev/null || true
 }
@@ -236,9 +242,15 @@ run_busco() {
         mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
     else
         touch {sample}-auto-busco.batch_summary.txt
+        # upstream BUSCO_BUSCO: a run that never produced a batch summary
+        # leaves the *.batch_summary.failed.txt error artifact (and exits
+        # non-zero at the process level; here the empty summary is the
+        # failure marker consumers already handle).
+        cp {sample}-auto-busco.batch_summary.txt {sample}-auto-busco.batch_summary.failed.txt
     fi
     mkdir -p "$wd/$2"
     mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    [ -f {sample}-auto-busco.batch_summary.failed.txt ] && mv {sample}-auto-busco.batch_summary.failed.txt "$wd/$2/" || true
     mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
     mv short_summary.* "$wd/$2/" 2>/dev/null || true
 }
@@ -405,9 +417,15 @@ run_busco() {
         mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
     else
         touch {sample}-auto-busco.batch_summary.txt
+        # upstream BUSCO_BUSCO: a run that never produced a batch summary
+        # leaves the *.batch_summary.failed.txt error artifact (and exits
+        # non-zero at the process level; here the empty summary is the
+        # failure marker consumers already handle).
+        cp {sample}-auto-busco.batch_summary.txt {sample}-auto-busco.batch_summary.failed.txt
     fi
     mkdir -p "$wd/$2"
     mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    [ -f {sample}-auto-busco.batch_summary.failed.txt ] && mv {sample}-auto-busco.batch_summary.failed.txt "$wd/$2/" || true
     mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
     mv short_summary.* "$wd/$2/" 2>/dev/null || true
 }
@@ -574,9 +592,15 @@ run_busco() {
         mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
     else
         touch {sample}-auto-busco.batch_summary.txt
+        # upstream BUSCO_BUSCO: a run that never produced a batch summary
+        # leaves the *.batch_summary.failed.txt error artifact (and exits
+        # non-zero at the process level; here the empty summary is the
+        # failure marker consumers already handle).
+        cp {sample}-auto-busco.batch_summary.txt {sample}-auto-busco.batch_summary.failed.txt
     fi
     mkdir -p "$wd/$2"
     mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    [ -f {sample}-auto-busco.batch_summary.failed.txt ] && mv {sample}-auto-busco.batch_summary.failed.txt "$wd/$2/" || true
     mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
     mv short_summary.* "$wd/$2/" 2>/dev/null || true
 }
@@ -743,9 +767,15 @@ run_busco() {
         mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
     else
         touch {sample}-auto-busco.batch_summary.txt
+        # upstream BUSCO_BUSCO: a run that never produced a batch summary
+        # leaves the *.batch_summary.failed.txt error artifact (and exits
+        # non-zero at the process level; here the empty summary is the
+        # failure marker consumers already handle).
+        cp {sample}-auto-busco.batch_summary.txt {sample}-auto-busco.batch_summary.failed.txt
     fi
     mkdir -p "$wd/$2"
     mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    [ -f {sample}-auto-busco.batch_summary.failed.txt ] && mv {sample}-auto-busco.batch_summary.failed.txt "$wd/$2/" || true
     mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
     mv short_summary.* "$wd/$2/" 2>/dev/null || true
 }
@@ -912,9 +942,15 @@ run_busco() {
         mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
     else
         touch {sample}-auto-busco.batch_summary.txt
+        # upstream BUSCO_BUSCO: a run that never produced a batch summary
+        # leaves the *.batch_summary.failed.txt error artifact (and exits
+        # non-zero at the process level; here the empty summary is the
+        # failure marker consumers already handle).
+        cp {sample}-auto-busco.batch_summary.txt {sample}-auto-busco.batch_summary.failed.txt
     fi
     mkdir -p "$wd/$2"
     mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    [ -f {sample}-auto-busco.batch_summary.failed.txt ] && mv {sample}-auto-busco.batch_summary.failed.txt "$wd/$2/" || true
     mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
     mv short_summary.* "$wd/$2/" 2>/dev/null || true
 }
@@ -1080,9 +1116,15 @@ run_busco() {
         mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
     else
         touch {sample}-auto-busco.batch_summary.txt
+        # upstream BUSCO_BUSCO: a run that never produced a batch summary
+        # leaves the *.batch_summary.failed.txt error artifact (and exits
+        # non-zero at the process level; here the empty summary is the
+        # failure marker consumers already handle).
+        cp {sample}-auto-busco.batch_summary.txt {sample}-auto-busco.batch_summary.failed.txt
     fi
     mkdir -p "$wd/$2"
     mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    [ -f {sample}-auto-busco.batch_summary.failed.txt ] && mv {sample}-auto-busco.batch_summary.failed.txt "$wd/$2/" || true
     mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
     mv short_summary.* "$wd/$2/" 2>/dev/null || true
 }
@@ -1246,9 +1288,15 @@ run_busco() {
         mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
     else
         touch {sample}-auto-busco.batch_summary.txt
+        # upstream BUSCO_BUSCO: a run that never produced a batch summary
+        # leaves the *.batch_summary.failed.txt error artifact (and exits
+        # non-zero at the process level; here the empty summary is the
+        # failure marker consumers already handle).
+        cp {sample}-auto-busco.batch_summary.txt {sample}-auto-busco.batch_summary.failed.txt
     fi
     mkdir -p "$wd/$2"
     mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    [ -f {sample}-auto-busco.batch_summary.failed.txt ] && mv {sample}-auto-busco.batch_summary.failed.txt "$wd/$2/" || true
     mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
     mv short_summary.* "$wd/$2/" 2>/dev/null || true
 }
@@ -1412,9 +1460,15 @@ run_busco() {
         mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
     else
         touch {sample}-auto-busco.batch_summary.txt
+        # upstream BUSCO_BUSCO: a run that never produced a batch summary
+        # leaves the *.batch_summary.failed.txt error artifact (and exits
+        # non-zero at the process level; here the empty summary is the
+        # failure marker consumers already handle).
+        cp {sample}-auto-busco.batch_summary.txt {sample}-auto-busco.batch_summary.failed.txt
     fi
     mkdir -p "$wd/$2"
     mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    [ -f {sample}-auto-busco.batch_summary.failed.txt ] && mv {sample}-auto-busco.batch_summary.failed.txt "$wd/$2/" || true
     mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
     mv short_summary.* "$wd/$2/" 2>/dev/null || true
 }
@@ -1578,9 +1632,15 @@ run_busco() {
         mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
     else
         touch {sample}-auto-busco.batch_summary.txt
+        # upstream BUSCO_BUSCO: a run that never produced a batch summary
+        # leaves the *.batch_summary.failed.txt error artifact (and exits
+        # non-zero at the process level; here the empty summary is the
+        # failure marker consumers already handle).
+        cp {sample}-auto-busco.batch_summary.txt {sample}-auto-busco.batch_summary.failed.txt
     fi
     mkdir -p "$wd/$2"
     mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    [ -f {sample}-auto-busco.batch_summary.failed.txt ] && mv {sample}-auto-busco.batch_summary.failed.txt "$wd/$2/" || true
     mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
     mv short_summary.* "$wd/$2/" 2>/dev/null || true
 }
@@ -1744,9 +1804,15 @@ run_busco() {
         mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
     else
         touch {sample}-auto-busco.batch_summary.txt
+        # upstream BUSCO_BUSCO: a run that never produced a batch summary
+        # leaves the *.batch_summary.failed.txt error artifact (and exits
+        # non-zero at the process level; here the empty summary is the
+        # failure marker consumers already handle).
+        cp {sample}-auto-busco.batch_summary.txt {sample}-auto-busco.batch_summary.failed.txt
     fi
     mkdir -p "$wd/$2"
     mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    [ -f {sample}-auto-busco.batch_summary.failed.txt ] && mv {sample}-auto-busco.batch_summary.failed.txt "$wd/$2/" || true
     mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
     mv short_summary.* "$wd/$2/" 2>/dev/null || true
 }
@@ -1910,9 +1976,15 @@ run_busco() {
         mv {sample}-auto-busco/logs/busco.log {sample}-auto-busco.log 2>/dev/null || true
     else
         touch {sample}-auto-busco.batch_summary.txt
+        # upstream BUSCO_BUSCO: a run that never produced a batch summary
+        # leaves the *.batch_summary.failed.txt error artifact (and exits
+        # non-zero at the process level; here the empty summary is the
+        # failure marker consumers already handle).
+        cp {sample}-auto-busco.batch_summary.txt {sample}-auto-busco.batch_summary.failed.txt
     fi
     mkdir -p "$wd/$2"
     mv {sample}-auto-busco.batch_summary.txt "$wd/$2/"
+    [ -f {sample}-auto-busco.batch_summary.failed.txt ] && mv {sample}-auto-busco.batch_summary.failed.txt "$wd/$2/" || true
     mv {sample}-auto-busco.log "$wd/$2/" 2>/dev/null || true
     mv short_summary.* "$wd/$2/" 2>/dev/null || true
 }
