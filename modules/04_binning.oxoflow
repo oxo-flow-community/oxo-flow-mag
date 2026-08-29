@@ -20,7 +20,7 @@ description = "nf-core/mag 5.5.0 04_binning fragment"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "depths_spades"
-when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
+when = "config.reads_sheet == ''"
 input = [
     # the bam files, not the dir: exact-string edges from the align
     # rule + per-file manifests propagate re-runs (live: a dir-only
@@ -56,6 +56,7 @@ conda = "envs/mag_depths.yaml"
 
 [[rules]]
 name = "depths_megahit"
+when = "config.reads_sheet == ''"
 input = [
     # the bam files, not the dir: exact-string edges from the align
     # rule + per-file manifests propagate re-runs (live: a dir-only
@@ -1848,3 +1849,67 @@ time_limit = "4h"
 
 [rules.environment]
 conda = "envs/split_fasta.yaml"
+
+# SHEET-MODE DEPTHS (SPAdes): the sheet cohort's bam names follow
+# config.cohort_samples, so the default rule's declared per-file inputs
+# do not exist. This variant declares the alignments dir and globs the bams
+# in the shell (sorted, deterministic). Default mode: pruned at plan time.
+[[rules]]
+name = "depths_spades_sheet"
+when = "config.reads_sheet != '' && ({meta.reads_2} != '' || {meta.reads_layout} == 'interleaved')"
+input = ["intermediates/binning/alignments/SPAdes"]
+output = [
+    "intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz",
+    "{config.out_dir}/GenomeBinning/depths/contigs/SPAdes-{sample}-depth.txt.gz",
+]
+depends_on = ["bowtie2_align_spades_sheet"]
+description = "Per-contig depths of the cohort bams against the SPAdes assembly from the reads sheet (upstream METABAT2_JGISUMMARIZEBAMCONTIGDEPTHS_SHORTREAD)"
+shell = """
+export OMP_NUM_THREADS={threads}
+mkdir -p intermediates/binning/depths {config.out_dir}/GenomeBinning/depths/contigs
+bams=$(LC_ALL=C ls intermediates/binning/alignments/SPAdes/SPAdes-{sample}-*.bam)
+jgi_summarize_bam_contig_depths --outputDepth SPAdes-{sample}-depth.txt $bams
+bgzip --threads {threads} SPAdes-{sample}-depth.txt
+mv SPAdes-{sample}-depth.txt.gz intermediates/binning/depths/
+cp intermediates/binning/depths/SPAdes-{sample}-depth.txt.gz {config.out_dir}/GenomeBinning/depths/contigs/
+"""
+
+[rules.resources]
+threads = 6
+memory = "36G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"
+
+# SHEET-MODE DEPTHS (MEGAHIT): the sheet cohort's bam names follow
+# config.cohort_samples, so the default rule's declared per-file inputs
+# do not exist. This variant declares the alignments dir and globs the bams
+# in the shell (sorted, deterministic). Default mode: pruned at plan time.
+[[rules]]
+name = "depths_megahit_sheet"
+when = "config.reads_sheet != '' && {meta.reads_1} != ''"
+input = ["intermediates/binning/alignments/MEGAHIT"]
+output = [
+    "intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz",
+    "{config.out_dir}/GenomeBinning/depths/contigs/MEGAHIT-{sample}-depth.txt.gz",
+]
+depends_on = ["bowtie2_align_megahit_sheet"]
+description = "Per-contig depths of the cohort bams against the MEGAHIT assembly from the reads sheet (upstream METABAT2_JGISUMMARIZEBAMCONTIGDEPTHS_SHORTREAD)"
+shell = """
+export OMP_NUM_THREADS={threads}
+mkdir -p intermediates/binning/depths {config.out_dir}/GenomeBinning/depths/contigs
+bams=$(LC_ALL=C ls intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-*.bam)
+jgi_summarize_bam_contig_depths --outputDepth MEGAHIT-{sample}-depth.txt $bams
+bgzip --threads {threads} MEGAHIT-{sample}-depth.txt
+mv MEGAHIT-{sample}-depth.txt.gz intermediates/binning/depths/
+cp intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz {config.out_dir}/GenomeBinning/depths/contigs/
+"""
+
+[rules.resources]
+threads = 6
+memory = "36G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/mag_depths.yaml"

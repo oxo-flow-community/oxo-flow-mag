@@ -1,0 +1,36 @@
+/data/home/wsx/miniconda3/envs/quast/bin/quast.py --threads 1 --rna-finding assembly.fa -o /data/home/wsx/mag-sheet-test/repo/.tmp/quast_spades_S1/QUAST --labels SPAdes-S1
+
+Version: 5.0.2
+
+System information:
+  OS: Linux-5.14.0-570.55.1.el9_6.x86_64-x86_64-with-redhat-9.6-Blue_Onyx (linux_64)
+  Python version: 3.7.6
+  CPUs number: 64
+
+Started: 2026-08-29 02:37:27
+
+Logging to /data/home/wsx/mag-sheet-test/repo/.tmp/quast_spades_S1/QUAST/quast.log
+NOTICE: Output directory already exists and looks like a QUAST output dir. Existing results can be reused (e.g. previously generated alignments)!
+
+CWD: /data/home/wsx/mag-sheet-test/repo/.tmp/quast_spades_S1
+Main parameters: 
+  MODE: meta, threads: 1, minimum contig length: 500, minimum alignment length: 65, ambiguity: one, \
+  threshold for extensive misassembly size: 1000
+
+Contigs:
+  Pre-processing...
+  assembly.fa ==> SPAdes-S1
+
+2026-08-29 02:37:27
+Running Basic statistics processor...
+  Contig files: 
+    SPAdes-S1
+  Calculating N50 and L50...
+    SPAdes-S1, N50 = 5055, L50 = 9, Total length = 90990, GC % = 50.00, # N's per 100 kbp =  0.00
+  Drawing Nx plot...
+    saved to /data/home/wsx/mag-sheet-test/repo/.tmp/quast_spades_S1/QUAST/basic_stats/Nx_plot.pdf
+  Drawing cumulative plot...
+    saved to /data/home/wsx/mag-sheet-test/repo/.tmp/quast_spades_S1/QUAST/basic_stats/cumulative_plot.pdf
+  Drawing GC content plot...
+    saved to /data/home/wsx/mag-sheet-test/repo/.tmp/quast_spades_S1/QUAST/basic_stats/GC_content_plot.pdf
+  Drawing SPAdes-S1 GC content plot...

@@ -208,7 +208,7 @@ conda = "envs/bowtie2_samtools.yaml"
 # Default mode: pruned at plan time (default plan byte-identical).
 [[rules]]
 name = "bowtie2_align_spades_sheet"
-when = "config.reads_sheet != '' && {meta.reads_1} != ''"
+when = "config.reads_sheet != '' && ({meta.reads_2} != '' || {meta.reads_layout} == 'interleaved')"
 input = [
     "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.1.bt2",
     "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.rev.1.bt2",

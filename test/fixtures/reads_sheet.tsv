@@ -1,0 +1,4 @@
+sample	reads_1	reads_2	reads_layout
+S1	/data/home/wsx/mag-sheet-test/repo/test/fixtures/raw/S1_R1.fastq.gz	/data/home/wsx/mag-sheet-test/repo/test/fixtures/raw/S1_R2.fastq.gz	pe
+SE1	/data/home/wsx/mag-sheet-test/repo/test/fixtures/raw/S1_R1.fastq.gz		single
+IL1	/data/home/wsx/mag-sheet-test/repo/test/fixtures/interleaved_IL1.fastq.gz		interleaved
