@@ -21,6 +21,7 @@ description = "nf-core/mag 5.5.0 05_binqc fragment"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "busco_spades_metabat2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
     "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
@@ -93,6 +94,7 @@ conda = "envs/busco.yaml"
 
 [[rules]]
 name = "mag_depths_spades_metabat2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
     "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
@@ -130,6 +132,7 @@ conda = "envs/mag_depths.yaml"
 
 [[rules]]
 name = "quast_bins_spades_metabat2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
     "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
@@ -187,6 +190,7 @@ conda = "envs/quast.yaml"
 
 [[rules]]
 name = "busco_spades_maxbin2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/MaxBin2/bins",
     "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
@@ -259,6 +263,7 @@ conda = "envs/busco.yaml"
 
 [[rules]]
 name = "mag_depths_spades_maxbin2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/MaxBin2/bins",
     "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
@@ -296,6 +301,7 @@ conda = "envs/mag_depths.yaml"
 
 [[rules]]
 name = "quast_bins_spades_maxbin2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/MaxBin2/bins",
     "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
@@ -353,6 +359,7 @@ conda = "envs/quast.yaml"
 
 [[rules]]
 name = "busco_spades_concoct"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/CONCOCT/bins",
     "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
@@ -425,6 +432,7 @@ conda = "envs/busco.yaml"
 
 [[rules]]
 name = "mag_depths_spades_concoct"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/CONCOCT/bins",
     "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
@@ -462,6 +470,7 @@ conda = "envs/mag_depths.yaml"
 
 [[rules]]
 name = "quast_bins_spades_concoct"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/CONCOCT/bins",
     "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
@@ -519,6 +528,7 @@ conda = "envs/quast.yaml"
 
 [[rules]]
 name = "busco_spades_comebin"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/COMEBin/bins",
     "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
@@ -591,6 +601,7 @@ conda = "envs/busco.yaml"
 
 [[rules]]
 name = "mag_depths_spades_comebin"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/COMEBin/bins",
     "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
@@ -628,6 +639,7 @@ conda = "envs/mag_depths.yaml"
 
 [[rules]]
 name = "quast_bins_spades_comebin"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/COMEBin/bins",
     "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
@@ -685,6 +697,7 @@ conda = "envs/quast.yaml"
 
 [[rules]]
 name = "busco_spades_metabinner"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/MetaBinner/bins",
     "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
@@ -757,6 +770,7 @@ conda = "envs/busco.yaml"
 
 [[rules]]
 name = "mag_depths_spades_metabinner"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/MetaBinner/bins",
     "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
@@ -794,6 +808,7 @@ conda = "envs/mag_depths.yaml"
 
 [[rules]]
 name = "quast_bins_spades_metabinner"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/MetaBinner/bins",
     "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
@@ -851,6 +866,7 @@ conda = "envs/quast.yaml"
 
 [[rules]]
 name = "busco_spades_semibin2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/SemiBin2/bins",
     "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
@@ -923,6 +939,7 @@ conda = "envs/busco.yaml"
 
 [[rules]]
 name = "mag_depths_spades_semibin2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/SemiBin2/bins",
     "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
@@ -960,6 +977,7 @@ conda = "envs/mag_depths.yaml"
 
 [[rules]]
 name = "quast_bins_spades_semibin2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/SemiBin2/bins",
     "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
@@ -2149,6 +2167,7 @@ conda = "envs/qsv.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "ale_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     # the own-readset bam as a FILE input: the dir alone forms no DAG
     # edge and no per-file manifest, so ALE could run against a stale

@@ -51,7 +51,7 @@ time_limit = "4h"
 conda = "envs/gtdbtk_db_preparation.yaml"
 [[rules]]
 name = "gtdbtk_spades_metabat2"
-when = "config.run_gtdbtk"
+when = "config.run_gtdbtk && (config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved')"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBAT2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBAT2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -140,7 +140,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_spades_maxbin2"
-when = "config.run_gtdbtk"
+when = "config.run_gtdbtk && (config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved')"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MaxBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MaxBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -229,7 +229,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_spades_concoct"
-when = "config.run_gtdbtk"
+when = "config.run_gtdbtk && (config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved')"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-CONCOCT-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-CONCOCT-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -318,7 +318,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_spades_comebin"
-when = "config.run_gtdbtk"
+when = "config.run_gtdbtk && (config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved')"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-COMEBin-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-COMEBin-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -407,7 +407,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_spades_metabinner"
-when = "config.run_gtdbtk"
+when = "config.run_gtdbtk && (config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved')"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBinner-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-MetaBinner-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -496,7 +496,7 @@ conda = "envs/gtdbtk.yaml"
 
 [[rules]]
 name = "gtdbtk_spades_semibin2"
-when = "config.run_gtdbtk"
+when = "config.run_gtdbtk && (config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved')"
 input = [
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-SemiBin2-unclassified-unrefined-{sample}/{sample}-auto-busco.batch_summary.txt",
     "{config.out_dir}/GenomeBinning/QC/BUSCO/SPAdes-SemiBin2-unclassified-unrefined_unbinned-{sample}/{sample}-auto-busco.batch_summary.txt",
@@ -1234,6 +1234,7 @@ conda = "envs/bin_summary.yaml"
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "prokka_spades_metabat2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
     "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
@@ -1272,6 +1273,7 @@ conda = "envs/prokka.yaml"
 
 [[rules]]
 name = "prokka_spades_maxbin2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/MaxBin2/bins",
     "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
@@ -1310,6 +1312,7 @@ conda = "envs/prokka.yaml"
 
 [[rules]]
 name = "prokka_spades_concoct"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/CONCOCT/bins",
     "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
@@ -1348,6 +1351,7 @@ conda = "envs/prokka.yaml"
 
 [[rules]]
 name = "prokka_spades_comebin"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/COMEBin/bins",
     "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
@@ -1386,6 +1390,7 @@ conda = "envs/prokka.yaml"
 
 [[rules]]
 name = "prokka_spades_metabinner"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/MetaBinner/bins",
     "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
@@ -1424,6 +1429,7 @@ conda = "envs/prokka.yaml"
 
 [[rules]]
 name = "prokka_spades_semibin2"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = [
     "{config.out_dir}/GenomeBinning/SemiBin2/bins",
     "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",

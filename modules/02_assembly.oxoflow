@@ -15,6 +15,7 @@ description = "nf-core/mag 5.5.0 02_assembly fragment"
 # so the rule runs in a scratch dir and moves the named outputs out.
 [[rules]]
 name = "spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != ''"
 input = [
     # Both read variants are optional globs: the shell prefers bbnorm when
     # --bbnorm is on, else the phiX-removed reads — the inactive variant
@@ -84,9 +85,61 @@ time_limit = "24h"
 [rules.environment]
 conda = "envs/spades.yaml"
 
+# SHEET-MODE SPADES for interleaved rows (reads_sheet): upstream SPADES
+# consumes the reads as -1/-2 or -s (single); spades.py --meta also accepts
+# --interleaved. Interleaved rows pass the single stream as --interleaved;
+# single-end rows are NOT assembled with SPAdes (upstream: "metaSPAdes does
+# not support single-end data. SPAdes will be skipped.").
+# Default mode: no metadata rows -> every instance pruned at plan time.
+[[rules]]
+name = "spades_interleaved_sheet"
+when = "config.reads_sheet != '' && {meta.reads_layout} == 'interleaved'"
+input = [
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
+]
+output = [
+    "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa.gz",
+    "{config.out_dir}/Assembly/SPAdes/SPAdes-{sample}.spades.log",
+]
+description = "Metagenomic assembly with SPAdes from the reads sheet (interleaved layout)"
+depends_on = ["phix_align_sheet"]
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/assembly/SPAdes {config.out_dir}/Assembly/SPAdes
+rm -rf .tmp/spades_{sample} && mkdir -p .tmp/spades_{sample} && cd .tmp/spades_{sample}
+ln -sf "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz" reads.fastq.gz
+spades.py \
+    --meta \
+    --threads {threads} \
+    --memory $(( {effective_memory_mb} / 1024 )) \
+    --12 reads.fastq.gz \
+    -o ./
+[ $? -eq 0 ] || { echo "spades.py failed for {sample}" 1>&2; exit 1; }
+if [ ! -s scaffolds.fasta ]; then
+    echo "spades produced no scaffolds for {sample}; emitting an empty assembly" 1>&2
+    touch scaffolds.fasta
+fi
+mv spades.log SPAdes-{sample}.spades.log
+mv scaffolds.fasta SPAdes-{sample}.scaffolds.fa
+gzip -n SPAdes-{sample}.scaffolds.fa
+mv SPAdes-{sample}.scaffolds.fa.gz "$wd/intermediates/assembly/SPAdes/"
+mv SPAdes-{sample}.spades.log "$wd/{config.out_dir}/Assembly/SPAdes/"
+cd "$wd"
+rm -rf .tmp/spades_{sample}
+"""
+
+[rules.resources]
+threads = 10
+memory = "72G"
+time_limit = "24h"
+
+[rules.environment]
+conda = "envs/spades.yaml"
+
 # MEGAHIT (label process_high + 8 cpu/40GB/16h override, prefix MEGAHIT-{id})
 [[rules]]
 name = "megahit"
+when = "config.reads_sheet == '' || {meta.reads_2} != ''"
 input = [
     # Both read variants are optional globs (see spades).
     "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz*",
@@ -150,9 +203,102 @@ time_limit = "16h"
 [rules.environment]
 conda = "envs/megahit.yaml"
 
+# SHEET-MODE MEGAHIT for interleaved rows (reads_sheet): megahit --12 reads
+# interleaved pairs from one file (upstream MEGAHIT module: paired = -1/-2,
+# single = -r; interleaved input is megahit's native --12).
+# Default mode: pruned at plan time.
+[[rules]]
+name = "megahit_interleaved_sheet"
+when = "config.reads_sheet != '' && {meta.reads_layout} == 'interleaved'"
+input = [
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
+]
+output = [
+    "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa.gz",
+    "{config.out_dir}/Assembly/MEGAHIT/MEGAHIT-{sample}.log",
+]
+description = "Metagenomic assembly with MEGAHIT from the reads sheet (interleaved layout)"
+depends_on = ["phix_align_sheet"]
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/assembly/MEGAHIT {config.out_dir}/Assembly/MEGAHIT
+rm -rf .tmp/megahit_{sample} && mkdir -p .tmp/megahit_{sample} && cd .tmp/megahit_{sample}
+ln -sf "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz" reads.fastq.gz
+megahit \
+    -m $(( {effective_memory_mb} * 1048576 )) \
+    -t {threads} \
+    --12 reads.fastq.gz \
+    --out-prefix MEGAHIT-{sample}
+[ $? -eq 0 ] || { echo "megahit failed for {sample}" 1>&2; exit 1; }
+pigz \
+    --no-name \
+    -p {threads} \
+    megahit_out/*.fa \
+    megahit_out/intermediate_contigs/*.fa
+mv megahit_out/* .
+mv MEGAHIT-{sample}.contigs.fa.gz "$wd/intermediates/assembly/MEGAHIT/"
+mv MEGAHIT-{sample}.log "$wd/{config.out_dir}/Assembly/MEGAHIT/"
+cd "$wd"
+rm -rf .tmp/megahit_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "40G"
+time_limit = "16h"
+
+[rules.environment]
+conda = "envs/megahit.yaml"
+
+# SHEET-MODE MEGAHIT for single-end rows (reads_sheet): upstream MEGAHIT
+# module single-end branch: -r <reads>.
+[[rules]]
+name = "megahit_single_sheet"
+when = "config.reads_sheet != '' && {meta.reads_layout} == 'single'"
+input = [
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz",
+]
+output = [
+    "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa.gz",
+    "{config.out_dir}/Assembly/MEGAHIT/MEGAHIT-{sample}.log",
+]
+description = "Metagenomic assembly with MEGAHIT from the reads sheet (single-end layout)"
+depends_on = ["phix_align_sheet"]
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/assembly/MEGAHIT {config.out_dir}/Assembly/MEGAHIT
+rm -rf .tmp/megahit_{sample} && mkdir -p .tmp/megahit_{sample} && cd .tmp/megahit_{sample}
+ln -sf "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz" reads.fastq.gz
+megahit \
+    -m $(( {effective_memory_mb} * 1048576 )) \
+    -t {threads} \
+    -r reads.fastq.gz \
+    --out-prefix MEGAHIT-{sample}
+[ $? -eq 0 ] || { echo "megahit failed for {sample}" 1>&2; exit 1; }
+pigz \
+    --no-name \
+    -p {threads} \
+    megahit_out/*.fa \
+    megahit_out/intermediate_contigs/*.fa
+mv megahit_out/* .
+mv MEGAHIT-{sample}.contigs.fa.gz "$wd/intermediates/assembly/MEGAHIT/"
+mv MEGAHIT-{sample}.log "$wd/{config.out_dir}/Assembly/MEGAHIT/"
+cd "$wd"
+rm -rf .tmp/megahit_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "40G"
+time_limit = "16h"
+
+[rules.environment]
+conda = "envs/megahit.yaml"
+
 # GUNZIP (label process_single; output name = input minus .gz minus last ext)
 [[rules]]
 name = "gunzip_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa.gz"]
 output = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
 description = "Decompress the SPAdes assembly (upstream GUNZIP on SPAdes output)"
@@ -192,6 +338,7 @@ conda = "envs/gunzip.yaml"
 # pattern), with report_rawassemblies.tsv additionally kept in intermediates.
 [[rules]]
 name = "quast_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
 output = [
     "intermediates/assembly/quast/SPAdes-{sample}.report_rawassemblies.tsv",
@@ -287,6 +434,7 @@ conda = "envs/quast.yaml"
 # PRODIGAL (label process_single + 4GB override, prefix {assembler}-{id}_prodigal)
 [[rules]]
 name = "prodigal_spades"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
 input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
 output = [
     "{config.out_dir}/Annotation/Prodigal/SPAdes/{sample}/SPAdes-{sample}_prodigal.fna.gz",
