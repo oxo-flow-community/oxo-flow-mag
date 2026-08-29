@@ -1,0 +1,11 @@
+---
+# Environment for minimap2 index/align + samtools sort/index — the upstream
+# minimap2=2.28 + htslib/samtools pins (binning_preparation_longread).
+name: minimap2_samtools
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::minimap2=2.28
+  - bioconda::samtools=1.22.1
+  - bioconda::htslib=1.22.1
