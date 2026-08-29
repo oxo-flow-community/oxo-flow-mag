@@ -12,7 +12,8 @@ description = "nf-core/mag 5.5.0 09_catpack fragment"
 # CATPACK_SUMMARISE_BINS -> bat_summary.tsv). Needs a local CAT database
 # (config.cat_db = CAT_prepare .tar.gz archive or unpacked directory with
 # db/ and tax/ subdirectories; upstream --cat_db). The contigs column
-# (CATPACK_UNBINS, --cat_classify_unbinned default false) is not ported.
+# (CATPACK_UNBINS, --cat_classify_unbinned default false) is ported below
+# as the when-gated catpack_unbinned_* family (config.cat_classify_unbinned).
 # ---------------------------------------------------------------------------
 [[rules]]
 name = "cat_db_preparation"
@@ -1742,6 +1743,714 @@ rm -rf .tmp/catpack_summarise_megahit_semibin2_{sample}
 threads = 1
 memory = "6G"
 time_limit = "4h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_unbinned_spades_metabat2"
+when = "config.cat_db && config.cat_classify_unbinned"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/unbinned/SPAdes-MetaBAT2-{sample}-unbinned.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/unbinned/SPAdes-MetaBAT2-{sample}-unbinned.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/unbinned/SPAdes-MetaBAT2-{sample}-unbinned.log",
+]
+depends_on = ["split_fasta_metabat2_spades", "cat_db_preparation"]
+description = "CAT_pack classification of the SPAdes MetaBAT2 unbinned contig chunks (upstream CATPACK_UNBINS, --cat_classify_unbinned)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_unbinned_spades_metabat2_{sample} && cd .tmp/catpack_unbinned_spades_metabat2_{sample}
+mkdir -p input_seqs
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/SPAdes-MetaBAT2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_seqs/$(basename "$f" .gz)
+done
+if ls input_seqs/* >/dev/null 2>&1; then
+    CAT_pack bins \
+        -n {threads} \
+        -b input_seqs/ \
+        -d "$wd/$db_dir" \
+        -t "$wd/$tax_dir" \
+        -s .fa \
+        -o SPAdes-MetaBAT2-{sample}-unbinned
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/unbinned"
+    mv SPAdes-MetaBAT2-{sample}-unbinned.* "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/unbinned/" 2>/dev/null || true
+else
+    # no unbinned chunks survived the min-length filter: emit empty
+    # artifacts so the declared-output contract holds
+    echo "catpack unbinned: no chunks matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/unbinned"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/unbinned/SPAdes-MetaBAT2-{sample}-unbinned.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/unbinned/SPAdes-MetaBAT2-{sample}-unbinned.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBAT2/{sample}/unbinned/SPAdes-MetaBAT2-{sample}-unbinned.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_unbinned_spades_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_unbinned_megahit_metabat2"
+when = "config.cat_db && config.cat_classify_unbinned"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/unbinned/MEGAHIT-MetaBAT2-{sample}-unbinned.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/unbinned/MEGAHIT-MetaBAT2-{sample}-unbinned.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/unbinned/MEGAHIT-MetaBAT2-{sample}-unbinned.log",
+]
+depends_on = ["split_fasta_metabat2_megahit", "cat_db_preparation"]
+description = "CAT_pack classification of the MEGAHIT MetaBAT2 unbinned contig chunks (upstream CATPACK_UNBINS, --cat_classify_unbinned)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_unbinned_megahit_metabat2_{sample} && cd .tmp/catpack_unbinned_megahit_metabat2_{sample}
+mkdir -p input_seqs
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/MEGAHIT-MetaBAT2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_seqs/$(basename "$f" .gz)
+done
+if ls input_seqs/* >/dev/null 2>&1; then
+    CAT_pack bins \
+        -n {threads} \
+        -b input_seqs/ \
+        -d "$wd/$db_dir" \
+        -t "$wd/$tax_dir" \
+        -s .fa \
+        -o MEGAHIT-MetaBAT2-{sample}-unbinned
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/unbinned"
+    mv MEGAHIT-MetaBAT2-{sample}-unbinned.* "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/unbinned/" 2>/dev/null || true
+else
+    # no unbinned chunks survived the min-length filter: emit empty
+    # artifacts so the declared-output contract holds
+    echo "catpack unbinned: no chunks matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/unbinned"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/unbinned/MEGAHIT-MetaBAT2-{sample}-unbinned.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/unbinned/MEGAHIT-MetaBAT2-{sample}-unbinned.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBAT2/{sample}/unbinned/MEGAHIT-MetaBAT2-{sample}-unbinned.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_unbinned_megahit_metabat2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_unbinned_spades_maxbin2"
+when = "config.cat_db && config.cat_classify_unbinned"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/unbinned/SPAdes-MaxBin2-{sample}-unbinned.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/unbinned/SPAdes-MaxBin2-{sample}-unbinned.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/unbinned/SPAdes-MaxBin2-{sample}-unbinned.log",
+]
+depends_on = ["split_fasta_maxbin2_spades", "cat_db_preparation"]
+description = "CAT_pack classification of the SPAdes MaxBin2 unbinned contig chunks (upstream CATPACK_UNBINS, --cat_classify_unbinned)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_unbinned_spades_maxbin2_{sample} && cd .tmp/catpack_unbinned_spades_maxbin2_{sample}
+mkdir -p input_seqs
+for f in "$wd"/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/SPAdes-MaxBin2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_seqs/$(basename "$f" .gz)
+done
+if ls input_seqs/* >/dev/null 2>&1; then
+    CAT_pack bins \
+        -n {threads} \
+        -b input_seqs/ \
+        -d "$wd/$db_dir" \
+        -t "$wd/$tax_dir" \
+        -s .fa \
+        -o SPAdes-MaxBin2-{sample}-unbinned
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/unbinned"
+    mv SPAdes-MaxBin2-{sample}-unbinned.* "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/unbinned/" 2>/dev/null || true
+else
+    # no unbinned chunks survived the min-length filter: emit empty
+    # artifacts so the declared-output contract holds
+    echo "catpack unbinned: no chunks matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/unbinned"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/unbinned/SPAdes-MaxBin2-{sample}-unbinned.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/unbinned/SPAdes-MaxBin2-{sample}-unbinned.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MaxBin2/{sample}/unbinned/SPAdes-MaxBin2-{sample}-unbinned.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_unbinned_spades_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_unbinned_megahit_maxbin2"
+when = "config.cat_db && config.cat_classify_unbinned"
+input = [
+    "{config.out_dir}/GenomeBinning/MaxBin2/unbinned",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/unbinned/MEGAHIT-MaxBin2-{sample}-unbinned.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/unbinned/MEGAHIT-MaxBin2-{sample}-unbinned.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/unbinned/MEGAHIT-MaxBin2-{sample}-unbinned.log",
+]
+depends_on = ["split_fasta_maxbin2_megahit", "cat_db_preparation"]
+description = "CAT_pack classification of the MEGAHIT MaxBin2 unbinned contig chunks (upstream CATPACK_UNBINS, --cat_classify_unbinned)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_unbinned_megahit_maxbin2_{sample} && cd .tmp/catpack_unbinned_megahit_maxbin2_{sample}
+mkdir -p input_seqs
+for f in "$wd"/{config.out_dir}/GenomeBinning/MaxBin2/unbinned/MEGAHIT-MaxBin2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_seqs/$(basename "$f" .gz)
+done
+if ls input_seqs/* >/dev/null 2>&1; then
+    CAT_pack bins \
+        -n {threads} \
+        -b input_seqs/ \
+        -d "$wd/$db_dir" \
+        -t "$wd/$tax_dir" \
+        -s .fa \
+        -o MEGAHIT-MaxBin2-{sample}-unbinned
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/unbinned"
+    mv MEGAHIT-MaxBin2-{sample}-unbinned.* "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/unbinned/" 2>/dev/null || true
+else
+    # no unbinned chunks survived the min-length filter: emit empty
+    # artifacts so the declared-output contract holds
+    echo "catpack unbinned: no chunks matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/unbinned"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/unbinned/MEGAHIT-MaxBin2-{sample}-unbinned.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/unbinned/MEGAHIT-MaxBin2-{sample}-unbinned.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MaxBin2/{sample}/unbinned/MEGAHIT-MaxBin2-{sample}-unbinned.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_unbinned_megahit_maxbin2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_unbinned_spades_concoct"
+when = "config.cat_db && config.cat_classify_unbinned"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/unbinned/SPAdes-CONCOCT-{sample}-unbinned.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/unbinned/SPAdes-CONCOCT-{sample}-unbinned.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/unbinned/SPAdes-CONCOCT-{sample}-unbinned.log",
+]
+depends_on = ["concoct_cutup_spades", "cat_db_preparation"]
+description = "CAT_pack classification of the SPAdes CONCOCT unbinned contig chunks (upstream CATPACK_UNBINS, --cat_classify_unbinned)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_unbinned_spades_concoct_{sample} && cd .tmp/catpack_unbinned_spades_concoct_{sample}
+mkdir -p input_seqs
+for f in "$wd"/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/SPAdes-CONCOCT-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_seqs/$(basename "$f" .gz)
+done
+if ls input_seqs/* >/dev/null 2>&1; then
+    CAT_pack bins \
+        -n {threads} \
+        -b input_seqs/ \
+        -d "$wd/$db_dir" \
+        -t "$wd/$tax_dir" \
+        -s .fa \
+        -o SPAdes-CONCOCT-{sample}-unbinned
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/unbinned"
+    mv SPAdes-CONCOCT-{sample}-unbinned.* "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/unbinned/" 2>/dev/null || true
+else
+    # no unbinned chunks survived the min-length filter: emit empty
+    # artifacts so the declared-output contract holds
+    echo "catpack unbinned: no chunks matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/unbinned"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/unbinned/SPAdes-CONCOCT-{sample}-unbinned.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/unbinned/SPAdes-CONCOCT-{sample}-unbinned.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/CONCOCT/{sample}/unbinned/SPAdes-CONCOCT-{sample}-unbinned.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_unbinned_spades_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_unbinned_megahit_concoct"
+when = "config.cat_db && config.cat_classify_unbinned"
+input = [
+    "{config.out_dir}/GenomeBinning/CONCOCT/unbinned",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/unbinned/MEGAHIT-CONCOCT-{sample}-unbinned.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/unbinned/MEGAHIT-CONCOCT-{sample}-unbinned.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/unbinned/MEGAHIT-CONCOCT-{sample}-unbinned.log",
+]
+depends_on = ["concoct_cutup_megahit", "cat_db_preparation"]
+description = "CAT_pack classification of the MEGAHIT CONCOCT unbinned contig chunks (upstream CATPACK_UNBINS, --cat_classify_unbinned)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_unbinned_megahit_concoct_{sample} && cd .tmp/catpack_unbinned_megahit_concoct_{sample}
+mkdir -p input_seqs
+for f in "$wd"/{config.out_dir}/GenomeBinning/CONCOCT/unbinned/MEGAHIT-CONCOCT-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_seqs/$(basename "$f" .gz)
+done
+if ls input_seqs/* >/dev/null 2>&1; then
+    CAT_pack bins \
+        -n {threads} \
+        -b input_seqs/ \
+        -d "$wd/$db_dir" \
+        -t "$wd/$tax_dir" \
+        -s .fa \
+        -o MEGAHIT-CONCOCT-{sample}-unbinned
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/unbinned"
+    mv MEGAHIT-CONCOCT-{sample}-unbinned.* "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/unbinned/" 2>/dev/null || true
+else
+    # no unbinned chunks survived the min-length filter: emit empty
+    # artifacts so the declared-output contract holds
+    echo "catpack unbinned: no chunks matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/unbinned"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/unbinned/MEGAHIT-CONCOCT-{sample}-unbinned.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/unbinned/MEGAHIT-CONCOCT-{sample}-unbinned.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/CONCOCT/{sample}/unbinned/MEGAHIT-CONCOCT-{sample}-unbinned.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_unbinned_megahit_concoct_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_unbinned_spades_comebin"
+when = "config.cat_db && config.cat_classify_unbinned"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/unbinned/SPAdes-COMEBin-{sample}-unbinned.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/unbinned/SPAdes-COMEBin-{sample}-unbinned.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/unbinned/SPAdes-COMEBin-{sample}-unbinned.log",
+]
+depends_on = ["comebin_spades", "cat_db_preparation"]
+description = "CAT_pack classification of the SPAdes COMEBin unbinned contig chunks (upstream CATPACK_UNBINS, --cat_classify_unbinned)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_unbinned_spades_comebin_{sample} && cd .tmp/catpack_unbinned_spades_comebin_{sample}
+mkdir -p input_seqs
+for f in "$wd"/{config.out_dir}/GenomeBinning/COMEBin/unbinned/SPAdes-COMEBin-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_seqs/$(basename "$f" .gz)
+done
+if ls input_seqs/* >/dev/null 2>&1; then
+    CAT_pack bins \
+        -n {threads} \
+        -b input_seqs/ \
+        -d "$wd/$db_dir" \
+        -t "$wd/$tax_dir" \
+        -s .fa \
+        -o SPAdes-COMEBin-{sample}-unbinned
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/unbinned"
+    mv SPAdes-COMEBin-{sample}-unbinned.* "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/unbinned/" 2>/dev/null || true
+else
+    # no unbinned chunks survived the min-length filter: emit empty
+    # artifacts so the declared-output contract holds
+    echo "catpack unbinned: no chunks matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/unbinned"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/unbinned/SPAdes-COMEBin-{sample}-unbinned.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/unbinned/SPAdes-COMEBin-{sample}-unbinned.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/COMEBin/{sample}/unbinned/SPAdes-COMEBin-{sample}-unbinned.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_unbinned_spades_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_unbinned_spades_metabinner"
+when = "config.cat_db && config.cat_classify_unbinned"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/unbinned/SPAdes-MetaBinner-{sample}-unbinned.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/unbinned/SPAdes-MetaBinner-{sample}-unbinned.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/unbinned/SPAdes-MetaBinner-{sample}-unbinned.log",
+]
+depends_on = ["split_fasta_metabinner_spades", "cat_db_preparation"]
+description = "CAT_pack classification of the SPAdes MetaBinner unbinned contig chunks (upstream CATPACK_UNBINS, --cat_classify_unbinned)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_unbinned_spades_metabinner_{sample} && cd .tmp/catpack_unbinned_spades_metabinner_{sample}
+mkdir -p input_seqs
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/SPAdes-MetaBinner-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_seqs/$(basename "$f" .gz)
+done
+if ls input_seqs/* >/dev/null 2>&1; then
+    CAT_pack bins \
+        -n {threads} \
+        -b input_seqs/ \
+        -d "$wd/$db_dir" \
+        -t "$wd/$tax_dir" \
+        -s .fa \
+        -o SPAdes-MetaBinner-{sample}-unbinned
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/unbinned"
+    mv SPAdes-MetaBinner-{sample}-unbinned.* "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/unbinned/" 2>/dev/null || true
+else
+    # no unbinned chunks survived the min-length filter: emit empty
+    # artifacts so the declared-output contract holds
+    echo "catpack unbinned: no chunks matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/unbinned"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/unbinned/SPAdes-MetaBinner-{sample}-unbinned.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/unbinned/SPAdes-MetaBinner-{sample}-unbinned.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/MetaBinner/{sample}/unbinned/SPAdes-MetaBinner-{sample}-unbinned.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_unbinned_spades_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_unbinned_megahit_metabinner"
+when = "config.cat_db && config.cat_classify_unbinned"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBinner/unbinned",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/unbinned/MEGAHIT-MetaBinner-{sample}-unbinned.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/unbinned/MEGAHIT-MetaBinner-{sample}-unbinned.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/unbinned/MEGAHIT-MetaBinner-{sample}-unbinned.log",
+]
+depends_on = ["split_fasta_metabinner_megahit", "cat_db_preparation"]
+description = "CAT_pack classification of the MEGAHIT MetaBinner unbinned contig chunks (upstream CATPACK_UNBINS, --cat_classify_unbinned)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_unbinned_megahit_metabinner_{sample} && cd .tmp/catpack_unbinned_megahit_metabinner_{sample}
+mkdir -p input_seqs
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBinner/unbinned/MEGAHIT-MetaBinner-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_seqs/$(basename "$f" .gz)
+done
+if ls input_seqs/* >/dev/null 2>&1; then
+    CAT_pack bins \
+        -n {threads} \
+        -b input_seqs/ \
+        -d "$wd/$db_dir" \
+        -t "$wd/$tax_dir" \
+        -s .fa \
+        -o MEGAHIT-MetaBinner-{sample}-unbinned
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/unbinned"
+    mv MEGAHIT-MetaBinner-{sample}-unbinned.* "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/unbinned/" 2>/dev/null || true
+else
+    # no unbinned chunks survived the min-length filter: emit empty
+    # artifacts so the declared-output contract holds
+    echo "catpack unbinned: no chunks matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/unbinned"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/unbinned/MEGAHIT-MetaBinner-{sample}-unbinned.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/unbinned/MEGAHIT-MetaBinner-{sample}-unbinned.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/MetaBinner/{sample}/unbinned/MEGAHIT-MetaBinner-{sample}-unbinned.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_unbinned_megahit_metabinner_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_unbinned_spades_semibin2"
+when = "config.cat_db && config.cat_classify_unbinned"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/unbinned/SPAdes-SemiBin2-{sample}-unbinned.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/unbinned/SPAdes-SemiBin2-{sample}-unbinned.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/unbinned/SPAdes-SemiBin2-{sample}-unbinned.log",
+]
+depends_on = ["semibin_spades", "cat_db_preparation"]
+description = "CAT_pack classification of the SPAdes SemiBin2 unbinned contig chunks (upstream CATPACK_UNBINS, --cat_classify_unbinned)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_unbinned_spades_semibin2_{sample} && cd .tmp/catpack_unbinned_spades_semibin2_{sample}
+mkdir -p input_seqs
+for f in "$wd"/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/SPAdes-SemiBin2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_seqs/$(basename "$f" .gz)
+done
+if ls input_seqs/* >/dev/null 2>&1; then
+    CAT_pack bins \
+        -n {threads} \
+        -b input_seqs/ \
+        -d "$wd/$db_dir" \
+        -t "$wd/$tax_dir" \
+        -s .fa \
+        -o SPAdes-SemiBin2-{sample}-unbinned
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/unbinned"
+    mv SPAdes-SemiBin2-{sample}-unbinned.* "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/unbinned/" 2>/dev/null || true
+else
+    # no unbinned chunks survived the min-length filter: emit empty
+    # artifacts so the declared-output contract holds
+    echo "catpack unbinned: no chunks matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/unbinned"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/unbinned/SPAdes-SemiBin2-{sample}-unbinned.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/unbinned/SPAdes-SemiBin2-{sample}-unbinned.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/SPAdes/SemiBin2/{sample}/unbinned/SPAdes-SemiBin2-{sample}-unbinned.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_unbinned_spades_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_unbinned_megahit_semibin2"
+when = "config.cat_db && config.cat_classify_unbinned"
+input = [
+    "{config.out_dir}/GenomeBinning/SemiBin2/unbinned",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/unbinned/MEGAHIT-SemiBin2-{sample}-unbinned.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/unbinned/MEGAHIT-SemiBin2-{sample}-unbinned.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/unbinned/MEGAHIT-SemiBin2-{sample}-unbinned.log",
+]
+depends_on = ["semibin_megahit", "cat_db_preparation"]
+description = "CAT_pack classification of the MEGAHIT SemiBin2 unbinned contig chunks (upstream CATPACK_UNBINS, --cat_classify_unbinned)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_unbinned_megahit_semibin2_{sample} && cd .tmp/catpack_unbinned_megahit_semibin2_{sample}
+mkdir -p input_seqs
+for f in "$wd"/{config.out_dir}/GenomeBinning/SemiBin2/unbinned/MEGAHIT-SemiBin2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_seqs/$(basename "$f" .gz)
+done
+if ls input_seqs/* >/dev/null 2>&1; then
+    CAT_pack bins \
+        -n {threads} \
+        -b input_seqs/ \
+        -d "$wd/$db_dir" \
+        -t "$wd/$tax_dir" \
+        -s .fa \
+        -o MEGAHIT-SemiBin2-{sample}-unbinned
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/unbinned"
+    mv MEGAHIT-SemiBin2-{sample}-unbinned.* "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/unbinned/" 2>/dev/null || true
+else
+    # no unbinned chunks survived the min-length filter: emit empty
+    # artifacts so the declared-output contract holds
+    echo "catpack unbinned: no chunks matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/unbinned"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/unbinned/MEGAHIT-SemiBin2-{sample}-unbinned.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/unbinned/MEGAHIT-SemiBin2-{sample}-unbinned.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/SemiBin2/{sample}/unbinned/MEGAHIT-SemiBin2-{sample}-unbinned.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_unbinned_megahit_semibin2_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
+
+[rules.environment]
+conda = "envs/catpack.yaml"
+
+[[rules]]
+name = "catpack_unbinned_megahit_comebin"
+when = "config.cat_db && config.cat_classify_unbinned"
+input = [
+    "{config.out_dir}/GenomeBinning/COMEBin/unbinned",
+    "intermediates/cat_db/db",
+]
+output = [
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/unbinned/MEGAHIT-COMEBin-{sample}-unbinned.bin2classification.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/unbinned/MEGAHIT-COMEBin-{sample}-unbinned.ORF2LCA.txt",
+    "{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/unbinned/MEGAHIT-COMEBin-{sample}-unbinned.log",
+]
+depends_on = ["comebin_megahit", "cat_db_preparation"]
+description = "CAT_pack classification of the MEGAHIT COMEBin unbinned contig chunks (upstream CATPACK_UNBINS, --cat_classify_unbinned)"
+shell = """
+wd=$(pwd)
+db_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name db | head -1)
+tax_dir=$(find -L intermediates/cat_db -maxdepth 3 -type d -name tax | head -1)
+if [ -z "$db_dir" ] || [ -z "$tax_dir" ]; then
+    echo "cat_db: the database must contain db/ and tax/ directories" 1>&2
+    exit 1
+fi
+mkdir -p .tmp/catpack_unbinned_megahit_comebin_{sample} && cd .tmp/catpack_unbinned_megahit_comebin_{sample}
+mkdir -p input_seqs
+for f in "$wd"/{config.out_dir}/GenomeBinning/COMEBin/unbinned/MEGAHIT-COMEBin-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    gunzip -c "$f" > input_seqs/$(basename "$f" .gz)
+done
+if ls input_seqs/* >/dev/null 2>&1; then
+    CAT_pack bins \
+        -n {threads} \
+        -b input_seqs/ \
+        -d "$wd/$db_dir" \
+        -t "$wd/$tax_dir" \
+        -s .fa \
+        -o MEGAHIT-COMEBin-{sample}-unbinned
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/unbinned"
+    mv MEGAHIT-COMEBin-{sample}-unbinned.* "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/unbinned/" 2>/dev/null || true
+else
+    # no unbinned chunks survived the min-length filter: emit empty
+    # artifacts so the declared-output contract holds
+    echo "catpack unbinned: no chunks matched for {sample}" 1>&2
+    mkdir -p "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/unbinned"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/unbinned/MEGAHIT-COMEBin-{sample}-unbinned.bin2classification.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/unbinned/MEGAHIT-COMEBin-{sample}-unbinned.ORF2LCA.txt"
+    touch "$wd/{config.out_dir}/Taxonomy/CAT/MEGAHIT/COMEBin/{sample}/unbinned/MEGAHIT-COMEBin-{sample}-unbinned.log"
+fi
+cd "$wd"
+rm -rf .tmp/catpack_unbinned_megahit_comebin_{sample}
+"""
+
+[rules.resources]
+threads = 6
+memory = "16G"
+time_limit = "8h"
 
 [rules.environment]
 conda = "envs/catpack.yaml"

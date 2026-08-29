@@ -142,6 +142,11 @@ gunc_db = ""
 # itself; db/ and tax/ directories are discovered inside it)
 cat_db = ""
 cat_allow_unofficial_lineages = false
+# Unbinned-contigs classification (upstream --cat_classify_unbinned, default
+# false): a second CAT_pack bins pass over the SPLIT_FASTA unbinned chunks of
+# every binner. Off by default — the binned-contigs column is the analysis
+# surface, matching upstream.
+cat_classify_unbinned = false
 # Virus identification (upstream --run_virus_identification; the geNomad
 # database is user-provided — genomad download-database; fails fast when empty)
 run_virus_identification = false
