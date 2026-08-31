@@ -67,7 +67,7 @@ cd oxo-flow-mag
 Derived from the workflow's own inputs and `[rules.resources]`:
 
 - **Reference data you must provide:**
-  - Your paired-end reads as `{sample}_R1.fastq.gz` / `{sample}_R2.fastq.gz` per sample in `config.input_dir` (default `test/fixtures/raw`, which ships tiny test fixtures — point this at your data). Uniform single-end libraries can be run by overriding `config.sample_pattern`; interleaved and multi-library lanes are not ported.
+  - Your reads, declared either in `config.input_dir` as paired-end `{sample}_R1.fastq.gz` / `{sample}_R2.fastq.gz` files (default `test/fixtures/raw`, which ships tiny test fixtures) or, for mixed layouts, via `config.reads_sheet` — a samplesheet TSV with columns `sample, reads_1, reads_2, reads_layout` (`pe` | `single` | `interleaved`), mirroring the upstream `--input` samplesheet (an example ships as `test/fixtures/reads_sheet.tsv`). Uniform single-end libraries can also be run by overriding `config.sample_pattern`; multi-library lanes (a sample assembled from several FASTQ pairs) are not ported.
   - A GTDB-Tk reference database for the classification step: oxo-flow cannot download it mid-run, so you must download the release tarball (`gtdbtk_data.tar.gz`, ~100 GB) or unpack it to a directory and set `config.gtdb_db` (see [Usage](#usage)).
   - The phiX reference is already bundled in the repo (`assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz`, the upstream default) — no download needed.
 - **Compute:** per-rule requests go up to 12 CPUs and 140 GB RAM — SPAdes requests 10 CPUs / 72 GB / 24 h, GTDB-Tk classifywf 2 CPUs / 140 GB / 12 h (defaults are 1 thread / 6 GB). A large-memory machine or cluster is expected for real datasets; the resource pool queues rules so the sum of parallel rules can exceed your machine.
@@ -84,6 +84,16 @@ oxo-flow run main.oxoflow
 ```
 
 Samples are discovered from `config.input_dir` (default `test/fixtures/raw`) as `{sample}_R1.fastq.gz` / `{sample}_R2.fastq.gz`. The cohort (default `S1 S2`) controls which assemblies each sample is aligned against, exactly like the upstream `binning_map_mode = 'group'`.
+
+### Mixed-layout samplesheet (reads_sheet)
+
+For cohorts mixing paired-end, single-end and interleaved libraries, set `config.reads_sheet` to a samplesheet TSV (mirroring the upstream `--input` sheet) with the columns `sample, reads_1, reads_2, reads_layout` (`pe` | `single` | `interleaved`; `reads_2` empty for single/interleaved rows):
+
+```bash
+oxo-flow run main.oxoflow reads_sheet=path/to/samplesheet.tsv
+```
+
+The sheet replaces the `{sample}_R1/_R2` input pattern with per-layout preprocessing/assembly rules; the example sheet `test/fixtures/reads_sheet.tsv` ships a pe + single + interleaved cohort over the test fixtures. The sample set still comes from the `[[sample_groups]]` cohort in `main.oxoflow` (or `--samples`), so keep it in sync with the sheet's rows.
 
 ### GTDB-Tk database
 
@@ -184,7 +194,7 @@ Each gate activates exactly its own branch: with the default config the executed
 
 - **Long-read assembly and binning** (`--longreads`): the upstream longreads subworkflow doubles the whole binning graph (every assembler x binner x sample) and needs long-read input files the paired-end `{sample}_R1/_R2` input model does not provide.
 - **Kaiju and diamond taxonomic profiling**: absent from upstream 5.5.0 entirely (removed upstream) — there is no module script to translate.
-- **Single-end / interleaved input modes** (upstream `--input` samplesheet modes): the port's default input model is paired-end `{sample}_R1.fastq.gz` / `{sample}_R2.fastq.gz`; uniform single-end libraries can be run by overriding `config.sample_pattern` (e.g. `{sample}.fastq.gz`); interleaved and mixed-library samplesheets are not ported.
+- **Multi-library lanes** (upstream `--input` samplesheet rows listing several FASTQ pairs per sample): the port's reads_sheet covers one stream per row (`pe` / `single` / `interleaved`); a sample assembled from multiple paired libraries would need lane-concatenation rules that the port does not ship.
 - **Ancient DNA** (`--ancient_dna`): rewires the workflow at 8 points — skips host removal, phiX removal and assembly; adds pydamage damage correction and freebayes/bcftools SNP calling into the GTDB-Tk filter and bin summary — for a niche off-by-default parameter; porting it would double the rule graph around the QC and taxonomy stages.
 - **CAT/BAT unbinned-contigs classification** (`--cat_classify_unbinned`, upstream default `false`): the ported CAT branch classifies binned contigs only; the unbinned column would add a second full `CAT_pack` pass over the chunked contigs, which are already classified by Tiara in the `bin_domain_classification` branch.
 - **Pydamage report page**: part of the ancient DNA branch (above); the CheckM2 and GUNC report pages are ported with their tools.
