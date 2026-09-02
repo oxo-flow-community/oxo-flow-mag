@@ -63,7 +63,7 @@ output = [
     "intermediates/binning/gtdbtk/discarded/SPAdes-MetaBAT2-{sample}.txt",
     "intermediates/binning/gtdbtk/summaries/SPAdes-MetaBAT2-{sample}",
 ]
-depends_on = ["busco_spades_metabat2", "gtdbtk_db_preparation", "checkm_qa_spades_metabat2"]
+depends_on = ["busco_spades_metabat2", "gtdbtk_db_preparation", "checkm2_spades_metabat2"]
 description = "GTDB-Tk classification of the SPAdes MetaBAT2 bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
 shell = """
 wd=$(pwd)
@@ -94,7 +94,9 @@ python "$wd/scripts/filter_bins_by_qc.py" \
 cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
 cp discarded_all.txt intermediates/binning/gtdbtk/discarded/SPAdes-MetaBAT2-{sample}.txt
 
-export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+# find prints a RELATIVE path here (start point is relative), but gtdbtk runs
+# after `cd` into a scratch dir - an unprefixed path breaks the package check.
+export GTDBTK_DATA_PATH="$wd/$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
 classify_group() {
     # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
     mkdir -p "$4" && cd "$4"
@@ -152,7 +154,7 @@ output = [
     "intermediates/binning/gtdbtk/discarded/SPAdes-MaxBin2-{sample}.txt",
     "intermediates/binning/gtdbtk/summaries/SPAdes-MaxBin2-{sample}",
 ]
-depends_on = ["busco_spades_maxbin2", "gtdbtk_db_preparation", "checkm_qa_spades_maxbin2"]
+depends_on = ["busco_spades_maxbin2", "gtdbtk_db_preparation", "checkm2_spades_maxbin2"]
 description = "GTDB-Tk classification of the SPAdes MaxBin2 bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
 shell = """
 wd=$(pwd)
@@ -183,7 +185,9 @@ python "$wd/scripts/filter_bins_by_qc.py" \
 cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
 cp discarded_all.txt intermediates/binning/gtdbtk/discarded/SPAdes-MaxBin2-{sample}.txt
 
-export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+# find prints a RELATIVE path here (start point is relative), but gtdbtk runs
+# after `cd` into a scratch dir - an unprefixed path breaks the package check.
+export GTDBTK_DATA_PATH="$wd/$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
 classify_group() {
     # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
     mkdir -p "$4" && cd "$4"
@@ -241,7 +245,7 @@ output = [
     "intermediates/binning/gtdbtk/discarded/SPAdes-CONCOCT-{sample}.txt",
     "intermediates/binning/gtdbtk/summaries/SPAdes-CONCOCT-{sample}",
 ]
-depends_on = ["busco_spades_concoct", "gtdbtk_db_preparation", "checkm_qa_spades_concoct"]
+depends_on = ["busco_spades_concoct", "gtdbtk_db_preparation", "checkm2_spades_concoct"]
 description = "GTDB-Tk classification of the SPAdes CONCOCT bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
 shell = """
 wd=$(pwd)
@@ -272,7 +276,9 @@ python "$wd/scripts/filter_bins_by_qc.py" \
 cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
 cp discarded_all.txt intermediates/binning/gtdbtk/discarded/SPAdes-CONCOCT-{sample}.txt
 
-export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+# find prints a RELATIVE path here (start point is relative), but gtdbtk runs
+# after `cd` into a scratch dir - an unprefixed path breaks the package check.
+export GTDBTK_DATA_PATH="$wd/$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
 classify_group() {
     # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
     mkdir -p "$4" && cd "$4"
@@ -330,7 +336,7 @@ output = [
     "intermediates/binning/gtdbtk/discarded/SPAdes-COMEBin-{sample}.txt",
     "intermediates/binning/gtdbtk/summaries/SPAdes-COMEBin-{sample}",
 ]
-depends_on = ["busco_spades_comebin", "gtdbtk_db_preparation", "checkm_qa_spades_comebin"]
+depends_on = ["busco_spades_comebin", "gtdbtk_db_preparation", "checkm2_spades_comebin"]
 description = "GTDB-Tk classification of the SPAdes COMEBin bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
 shell = """
 wd=$(pwd)
@@ -361,7 +367,9 @@ python "$wd/scripts/filter_bins_by_qc.py" \
 cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
 cp discarded_all.txt intermediates/binning/gtdbtk/discarded/SPAdes-COMEBin-{sample}.txt
 
-export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+# find prints a RELATIVE path here (start point is relative), but gtdbtk runs
+# after `cd` into a scratch dir - an unprefixed path breaks the package check.
+export GTDBTK_DATA_PATH="$wd/$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
 classify_group() {
     # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
     mkdir -p "$4" && cd "$4"
@@ -419,7 +427,7 @@ output = [
     "intermediates/binning/gtdbtk/discarded/SPAdes-MetaBinner-{sample}.txt",
     "intermediates/binning/gtdbtk/summaries/SPAdes-MetaBinner-{sample}",
 ]
-depends_on = ["busco_spades_metabinner", "gtdbtk_db_preparation", "checkm_qa_spades_metabinner"]
+depends_on = ["busco_spades_metabinner", "gtdbtk_db_preparation", "checkm2_spades_metabinner"]
 description = "GTDB-Tk classification of the SPAdes MetaBinner bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
 shell = """
 wd=$(pwd)
@@ -450,7 +458,9 @@ python "$wd/scripts/filter_bins_by_qc.py" \
 cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
 cp discarded_all.txt intermediates/binning/gtdbtk/discarded/SPAdes-MetaBinner-{sample}.txt
 
-export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+# find prints a RELATIVE path here (start point is relative), but gtdbtk runs
+# after `cd` into a scratch dir - an unprefixed path breaks the package check.
+export GTDBTK_DATA_PATH="$wd/$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
 classify_group() {
     # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
     mkdir -p "$4" && cd "$4"
@@ -508,7 +518,7 @@ output = [
     "intermediates/binning/gtdbtk/discarded/SPAdes-SemiBin2-{sample}.txt",
     "intermediates/binning/gtdbtk/summaries/SPAdes-SemiBin2-{sample}",
 ]
-depends_on = ["busco_spades_semibin2", "gtdbtk_db_preparation", "checkm_qa_spades_semibin2"]
+depends_on = ["busco_spades_semibin2", "gtdbtk_db_preparation", "checkm2_spades_semibin2"]
 description = "GTDB-Tk classification of the SPAdes SemiBin2 bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
 shell = """
 wd=$(pwd)
@@ -539,7 +549,9 @@ python "$wd/scripts/filter_bins_by_qc.py" \
 cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
 cp discarded_all.txt intermediates/binning/gtdbtk/discarded/SPAdes-SemiBin2-{sample}.txt
 
-export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+# find prints a RELATIVE path here (start point is relative), but gtdbtk runs
+# after `cd` into a scratch dir - an unprefixed path breaks the package check.
+export GTDBTK_DATA_PATH="$wd/$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
 classify_group() {
     # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
     mkdir -p "$4" && cd "$4"
@@ -597,7 +609,7 @@ output = [
     "intermediates/binning/gtdbtk/discarded/MEGAHIT-MetaBAT2-{sample}.txt",
     "intermediates/binning/gtdbtk/summaries/MEGAHIT-MetaBAT2-{sample}",
 ]
-depends_on = ["busco_megahit_metabat2", "gtdbtk_db_preparation", "checkm_qa_megahit_metabat2"]
+depends_on = ["busco_megahit_metabat2", "gtdbtk_db_preparation", "checkm2_megahit_metabat2"]
 description = "GTDB-Tk classification of the MEGAHIT MetaBAT2 bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
 shell = """
 wd=$(pwd)
@@ -628,7 +640,9 @@ python "$wd/scripts/filter_bins_by_qc.py" \
 cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
 cp discarded_all.txt intermediates/binning/gtdbtk/discarded/MEGAHIT-MetaBAT2-{sample}.txt
 
-export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+# find prints a RELATIVE path here (start point is relative), but gtdbtk runs
+# after `cd` into a scratch dir - an unprefixed path breaks the package check.
+export GTDBTK_DATA_PATH="$wd/$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
 classify_group() {
     # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
     mkdir -p "$4" && cd "$4"
@@ -686,7 +700,7 @@ output = [
     "intermediates/binning/gtdbtk/discarded/MEGAHIT-MaxBin2-{sample}.txt",
     "intermediates/binning/gtdbtk/summaries/MEGAHIT-MaxBin2-{sample}",
 ]
-depends_on = ["busco_megahit_maxbin2", "gtdbtk_db_preparation", "checkm_qa_megahit_maxbin2"]
+depends_on = ["busco_megahit_maxbin2", "gtdbtk_db_preparation", "checkm2_megahit_maxbin2"]
 description = "GTDB-Tk classification of the MEGAHIT MaxBin2 bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
 shell = """
 wd=$(pwd)
@@ -717,7 +731,9 @@ python "$wd/scripts/filter_bins_by_qc.py" \
 cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
 cp discarded_all.txt intermediates/binning/gtdbtk/discarded/MEGAHIT-MaxBin2-{sample}.txt
 
-export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+# find prints a RELATIVE path here (start point is relative), but gtdbtk runs
+# after `cd` into a scratch dir - an unprefixed path breaks the package check.
+export GTDBTK_DATA_PATH="$wd/$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
 classify_group() {
     # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
     mkdir -p "$4" && cd "$4"
@@ -775,7 +791,7 @@ output = [
     "intermediates/binning/gtdbtk/discarded/MEGAHIT-CONCOCT-{sample}.txt",
     "intermediates/binning/gtdbtk/summaries/MEGAHIT-CONCOCT-{sample}",
 ]
-depends_on = ["busco_megahit_concoct", "gtdbtk_db_preparation", "checkm_qa_megahit_concoct"]
+depends_on = ["busco_megahit_concoct", "gtdbtk_db_preparation", "checkm2_megahit_concoct"]
 description = "GTDB-Tk classification of the MEGAHIT CONCOCT bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
 shell = """
 wd=$(pwd)
@@ -806,7 +822,9 @@ python "$wd/scripts/filter_bins_by_qc.py" \
 cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
 cp discarded_all.txt intermediates/binning/gtdbtk/discarded/MEGAHIT-CONCOCT-{sample}.txt
 
-export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+# find prints a RELATIVE path here (start point is relative), but gtdbtk runs
+# after `cd` into a scratch dir - an unprefixed path breaks the package check.
+export GTDBTK_DATA_PATH="$wd/$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
 classify_group() {
     # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
     mkdir -p "$4" && cd "$4"
@@ -864,7 +882,7 @@ output = [
     "intermediates/binning/gtdbtk/discarded/MEGAHIT-COMEBin-{sample}.txt",
     "intermediates/binning/gtdbtk/summaries/MEGAHIT-COMEBin-{sample}",
 ]
-depends_on = ["busco_megahit_comebin", "gtdbtk_db_preparation", "checkm_qa_megahit_comebin"]
+depends_on = ["busco_megahit_comebin", "gtdbtk_db_preparation", "checkm2_megahit_comebin"]
 description = "GTDB-Tk classification of the MEGAHIT COMEBin bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
 shell = """
 wd=$(pwd)
@@ -895,7 +913,9 @@ python "$wd/scripts/filter_bins_by_qc.py" \
 cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
 cp discarded_all.txt intermediates/binning/gtdbtk/discarded/MEGAHIT-COMEBin-{sample}.txt
 
-export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+# find prints a RELATIVE path here (start point is relative), but gtdbtk runs
+# after `cd` into a scratch dir - an unprefixed path breaks the package check.
+export GTDBTK_DATA_PATH="$wd/$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
 classify_group() {
     # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
     mkdir -p "$4" && cd "$4"
@@ -953,7 +973,7 @@ output = [
     "intermediates/binning/gtdbtk/discarded/MEGAHIT-MetaBinner-{sample}.txt",
     "intermediates/binning/gtdbtk/summaries/MEGAHIT-MetaBinner-{sample}",
 ]
-depends_on = ["busco_megahit_metabinner", "gtdbtk_db_preparation", "checkm_qa_megahit_metabinner"]
+depends_on = ["busco_megahit_metabinner", "gtdbtk_db_preparation", "checkm2_megahit_metabinner"]
 description = "GTDB-Tk classification of the MEGAHIT MetaBinner bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
 shell = """
 wd=$(pwd)
@@ -984,7 +1004,9 @@ python "$wd/scripts/filter_bins_by_qc.py" \
 cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
 cp discarded_all.txt intermediates/binning/gtdbtk/discarded/MEGAHIT-MetaBinner-{sample}.txt
 
-export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+# find prints a RELATIVE path here (start point is relative), but gtdbtk runs
+# after `cd` into a scratch dir - an unprefixed path breaks the package check.
+export GTDBTK_DATA_PATH="$wd/$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
 classify_group() {
     # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
     mkdir -p "$4" && cd "$4"
@@ -1042,7 +1064,7 @@ output = [
     "intermediates/binning/gtdbtk/discarded/MEGAHIT-SemiBin2-{sample}.txt",
     "intermediates/binning/gtdbtk/summaries/MEGAHIT-SemiBin2-{sample}",
 ]
-depends_on = ["busco_megahit_semibin2", "gtdbtk_db_preparation", "checkm_qa_megahit_semibin2"]
+depends_on = ["busco_megahit_semibin2", "gtdbtk_db_preparation", "checkm2_megahit_semibin2"]
 description = "GTDB-Tk classification of the MEGAHIT SemiBin2 bins passing the BUSCO filter (upstream GTDBTK filter + GTDBTK_CLASSIFYWF)"
 shell = """
 wd=$(pwd)
@@ -1073,7 +1095,9 @@ python "$wd/scripts/filter_bins_by_qc.py" \
 cat discarded_bins.txt discarded_chunks.txt > discarded_all.txt
 cp discarded_all.txt intermediates/binning/gtdbtk/discarded/MEGAHIT-SemiBin2-{sample}.txt
 
-export GTDBTK_DATA_PATH="$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
+# find prints a RELATIVE path here (start point is relative), but gtdbtk runs
+# after `cd` into a scratch dir - an unprefixed path breaks the package check.
+export GTDBTK_DATA_PATH="$wd/$(find -L intermediates/gtdbtk_db -name metadata -type d -exec dirname {} \\; | head -1)"
 classify_group() {
     # $1 = passed list, $2 = source dir, $3 = gtdbtk prefix, $4 = scratch dir
     mkdir -p "$4" && cd "$4"

@@ -143,23 +143,30 @@ def main(args=None):
     ## BUSCO PROCESSING
 
     if args.busco_summary:
-        busco_results = pd.read_csv(args.busco_summary, sep="\t")
-        busco_bins = set(busco_results["Input_file"])
+        try:
+            busco_results = pd.read_csv(args.busco_summary, sep="\t")
+        except pd.errors.EmptyDataError:
+            # 0-byte BUSCO summary: treat like header-only, merge nothing.
+            busco_results = pd.DataFrame()
+        # A header-only or empty BUSCO summary (no bins passed QC, or all runs
+        # were filtered out upstream) must not abort the whole report; merge nothing.
+        if not busco_results.empty:
+            busco_bins = set(busco_results["Input_file"])
 
-        if set(bins) != busco_bins and len(busco_bins.intersection(set(bins))) > 0:
-            warnings.warn(
-                "Bins in BUSCO summary do not match bins in bin depths summary"
-            )
-        elif len(busco_bins.intersection(set(bins))) == 0:
-            sys.exit("Bins in BUSCO summary do not match bins in bin depths summary!")
-        busco_results = busco_results.add_suffix("_busco")
-        results = pd.merge(
-            results,
-            busco_results,
-            left_on="bin",
-            right_on="Input_file_busco",
-            how="outer",
-        )  # assuming depths for all bins are given
+            if set(bins) != busco_bins and len(busco_bins.intersection(set(bins))) > 0:
+                warnings.warn(
+                    "Bins in BUSCO summary do not match bins in bin depths summary"
+                )
+            elif len(busco_bins.intersection(set(bins))) == 0:
+                sys.exit("Bins in BUSCO summary do not match bins in bin depths summary!")
+            busco_results = busco_results.add_suffix("_busco")
+            results = pd.merge(
+                results,
+                busco_results,
+                left_on="bin",
+                right_on="Input_file_busco",
+                how="outer",
+            )  # assuming depths for all bins are given
 
     ## CHECKM PROCESSING
 
