@@ -74,7 +74,7 @@ Derived from the workflow's own inputs and `[rules.resources]`:
 - **Tools:** delivered as **conda environments with pinned versions** — one `envs/*.yaml` per tool, pinning the exact package versions of the upstream nf-core module environments. You need conda (or mamba) installed; there is no container layer, so Docker/Singularity are not used.
 - **CheckM data (first metabinner env creation):** the `metabinner` environment's checkm-genome package downloads the CheckM reference data (~1.1 GB, `data.ace.uq.edu.au`, sha256 `971ec469…`) when the env is first created — upstream bakes this into its containers at build time. If that host is slow for you, download `checkm_data_2015_01_16.tar.gz` yourself and re-create the env with `CHECKM_DATA_PATH=/path/to/checkm_data_2015_01_16.tar.gz` exported — checkm-genome's installer then copies the local file instead of downloading. The `--run_checkm` branch uses the same reference data via `envs/checkm.yaml` (same checkm-genome pin as the upstream module); point `config.checkm_db` at the local unpacked `checkm_data_2015_01_16` directory to skip the first-use download.
 - **Optional references (only when the matching branch is enabled):** a host genome FASTA for `config.host_fasta` (host read removal); a prebuilt bowtie2 index for `config.host_fasta_bowtie2index` (skips the build rule); Tiara downloads its model on first use of the `--bin_domain_classification` branch.
-- **Optional reference databases (per gated branch, all user-provided — the engine cannot download mid-run):** the CheckM2 database for `config.run_checkm2` (`checkm2 database --download`, ~8 GB); the GUNC reference database for `config.run_gunc` (`gunc download_db`, ~21 GB); the CAT-nr database for `config.cat_db` (`CAT_pack download` + `CAT_pack prepare`, ~35 GB, or the prepared archive/unpacked directory itself — the branch discovers the `db/` and `tax/` directories inside it); the geNomad database for `config.run_virus_identification` (`genomad download-database`, ~10 GB). Each gated branch fails fast with a clear message when its database is not configured.
+- **Optional reference databases (per gated branch, all user-provided — the engine cannot download mid-run):** the CheckM2 database for `config.run_checkm2` (`checkm2 database --download`, ~10 GB .dmnd; the v4 database is md5-verified live); the GUNC reference database for `config.run_gunc` (`gunc download_db`, ~21 GB); the CAT-nr database for `config.cat_db` (`CAT_pack download` + `CAT_pack prepare`, ~35 GB, or the prepared archive/unpacked directory itself — the branch discovers the `db/` and `tax/` directories inside it); the geNomad database for `config.run_virus_identification` (`genomad download-database`, ~10 GB). Each gated branch fails fast with a clear message when its database is not configured.
 - **ALE (one-time source build):** the upstream pin (`ale=20180904` from bioconda) is uninstallable — its pymix chain needs matplotlib <1.5, which no channel carries. The rules only call ALE's C binaries, so `envs/ale.yaml` ships the build toolchain and `scripts/build_ale.sh` compiles the pinned upstream source tag into the env (idempotent): `bash scripts/build_ale.sh` after the env is created.
 
 ## Usage
@@ -209,7 +209,7 @@ bash test/run.sh    # static acceptance: validate + lint + dry-run + debug
 
 The acceptance test needs only `oxo-flow` (v0.12.0+) on `PATH` (override with `OXO=/path/to/oxo-flow`); no conda environments or databases are required for validation.
 
-**Status: live-verified on bioinfo-wsx** (real metagenome reference data, `run_gtdbtk=false` — the documented live-test contract, since a real GTDB-Tk run needs the ~100 GB reference database). Live queue results:
+**Status: live-verified on bioinfo-wsx** (real metagenome reference data, `run_gtdbtk=false`; plus a full `run_gtdbtk=true` end-to-end run on 30 KB mock bins with the verified GTDB r232 tarball — 146 rules succeeded, 0 failed, summary tables produced). Live queue results:
 
 | Toggle | Result |
 |---|---|
@@ -219,6 +219,7 @@ The acceptance test needs only `oxo-flow` (v0.12.0+) on `PATH` (override with `O
 | `refine_bins_dastool=true` | ✅ PASS (MEGAHIT + SPAdes, MetaBAT2/COMEBin/SemiBin2/… binning + DASTool refinement) |
 | `run_checkm=true` | ✅ PASS (quast + CheckM lineage_wf on all bin sets) |
 | `bin_domain_classification=true` | ✅ PASS (TIARA_TIARA per-contig + TIARA_CLASSIFY per bin set; zero-classified sets emit an empty tsv — live-verified guard, see commit b67191b) |
+| `run_checkm2=true` + `checkm2_db` | ✅ PASS (checkm2 predict on all bin sets + full run with the GTDB-Tk filter consuming the CheckM2 reports; PR #21 fixed the 0-byte-report aggregation) |
 
 The remaining when-gated branches are statically verified: `validate` + `lint` + `dry-run` confirm each gate activates exactly its own branch with the default plan unchanged (see the gated-branches table). Runtime behavior of the underlying tools is unchanged from upstream nf-core/mag.
 
@@ -226,7 +227,7 @@ The remaining when-gated branches are statically verified: `validate` + `lint` +
 
 | Toggle | Needs | Status |
 |---|---|---|
-| `run_checkm2=true` + `checkm2_db` | CheckM2 database (`checkm2 database --download`, ~8 GB) | queued — `checkm2 predict` run on a real bin set |
+| `run_checkm2=true` + `checkm2_db` | CheckM2 database v4 (`checkm2 database --download`, ~10 GB .dmnd) | ✅ live-verified (md5-checked download; see the PASS row above) |
 | `run_gunc=true` + `gunc_db` | GUNC reference database (`gunc download_db`, ~21 GB) | queued — `gunc run` + `merge_checkm` merged output |
 | `cat_db=...` | CAT-nr database (CAT_pack download + prepare, ~35 GB) | queued — `CAT_pack bins`/`add_names`/`summarise` + `bat_summary.tsv` |
 | `run_virus_identification=true` + `genomad_db` | geNomad database (`genomad download-database`, ~10 GB) | queued — `genomad end-to-end` on a real assembly |
