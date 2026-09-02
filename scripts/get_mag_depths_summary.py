@@ -3,6 +3,7 @@
 ## Originally written by Sabrina Krakau and released under the MIT license.
 ## See git repository (https://github.com/nf-core/mag) for full license text.
 
+import os
 import sys
 import argparse
 import pandas as pd
@@ -34,10 +35,19 @@ def main(args=None):
 
     results = pd.DataFrame()
     for assembly_depths_file in args.depths:
-        assembly_results = pd.read_csv(assembly_depths_file, index_col="bin", sep="\t")
+        # When no bins were found for an assembly/binning method, the
+        # producing rule writes a 0-byte file; skip it instead of crashing.
+        if os.path.getsize(assembly_depths_file) == 0:
+            continue
+        try:
+            assembly_results = pd.read_csv(assembly_depths_file, index_col="bin", sep="\t")
+        except pd.errors.EmptyDataError:
+            continue
         results = results.append(assembly_results, sort=True, verify_integrity=True)
 
-    results.sort_values("bin").to_csv(args.out, sep="\t")
+    if not results.empty:
+        results = results.sort_values("bin")
+    results.to_csv(args.out, sep="\t")
 
 
 if __name__ == "__main__":
