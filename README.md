@@ -40,7 +40,7 @@ Tool versions and resource requests (cpu/memory/time per process label) match th
 
 ### 1. Install oxo-flow
 
-This workflow requires **oxo-flow >= 0.12.0**. The release binary is recommended:
+This workflow requires **oxo-flow >= 0.17.0**. The release binary is recommended:
 
 ```bash
 curl -fL -o oxo-flow.tar.gz https://github.com/Traitome/oxo-flow/releases/latest/download/oxo-flow-latest-x86_64-unknown-linux-gnu.tar.gz
@@ -146,7 +146,8 @@ Override any config value on the command line with `KEY=VALUE` arguments (`oxo-f
 | `gtdbtk_single_job` option | Not ported | Off by default upstream |
 | `gtdbtk_use_full_tree` / `gtdbtk_place_species` | Config keys not exposed | Off by default upstream |
 | Empty bin groups crash upstream (BUSCO on no input) | Empty groups produce empty/touched outputs and skip downstream classification | The pipeline never fails on empty groups |
-| Versions.yml / pipeline boilerplate (summary, methods_description) | Not ported | Not analysis output |
+| nf-core boilerplate (`versions.yml`) | engine-native export: `oxo-flow report --versions-yml <file> main.oxoflow` | oxo-flow ≥ 0.17.0 exports an nf-core-style `versions.yml` derived statically from the workflow declarations: one entry per rule (311 rules) with the pinned conda environment, or a `system` entry with an explicit "no software versions declared" note where no env is declared. Deviation: it is a standalone CI-diff artifact, not a per-process runtime capture — per-rule `versions.yml` emission inside every command is deliberately not replicated (it would change every rule's command while the default plan stays byte-identical). |
+| nf-core boilerplate (pipeline_summary, methods_description) | Not ported | Not analysis output |
 | `*-busco.batch_summary.failed.txt` | Not produced | Only exists upstream when a BUSCO run failed |
 | `results/GenomeBinning/QC/BUSCO/` flat short_summaries | Published into the same per-group dir as upstream | Same publish pattern `*{.txt,.json,.log}` |
 | Conda environments | `envs/*.yaml` with the same pins | `tar` added to `gunzip`/`gtdbtk_db_preparation` because there is no container layer; `split_fasta` and `mag_depths` pin `conda-forge::pandas=1.1.5` exactly like upstream (the other pins use the `bioconda::` channel prefix instead of `conda-forge::` — same package, same version) |
@@ -199,7 +200,7 @@ Each gate activates exactly its own branch: with the default config the executed
 - **CAT/BAT unbinned-contigs classification** (`--cat_classify_unbinned`, upstream default `false`): the ported CAT branch classifies binned contigs only; the unbinned column would add a second full `CAT_pack` pass over the chunked contigs, which are already classified by Tiara in the `bin_domain_classification` branch.
 - **Pydamage report page**: part of the ancient DNA branch (above); the CheckM2 and GUNC report pages are ported with their tools.
 - **BUSCO `*-busco.batch_summary.failed.txt`**: only exists upstream when a BUSCO run failed — an error-only artifact.
-- **nf-core boilerplate files** (pipeline_summary/methods_description, versions.yml): not analysis output.
+- **nf-core boilerplate files** (pipeline_summary, methods_description): not analysis output. The `versions.yml` half is covered by the engine-native export (`oxo-flow report --versions-yml <file> main.oxoflow`, see table).
 
 ## Test
 
@@ -207,7 +208,7 @@ Each gate activates exactly its own branch: with the default config the executed
 bash test/run.sh    # static acceptance: validate + lint + dry-run + debug
 ```
 
-The acceptance test needs only `oxo-flow` (v0.12.0+) on `PATH` (override with `OXO=/path/to/oxo-flow`); no conda environments or databases are required for validation.
+The acceptance test needs only `oxo-flow` (v0.17.0+) on `PATH` (override with `OXO=/path/to/oxo-flow`); no conda environments or databases are required for validation.
 
 **Status: live-verified on bioinfo-wsx** (real metagenome reference data, `run_gtdbtk=false`; plus a full `run_gtdbtk=true` end-to-end run on 30 KB mock bins with the verified GTDB r232 tarball — 146 rules succeeded, 0 failed, summary tables produced). Live queue results:
 
