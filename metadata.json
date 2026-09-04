@@ -12,6 +12,7 @@
     "license": "MIT"
   },
   "created": "2026-08-15",
+  "updated": "2026-09-04",
   "domain": "metagenomics",
   "tags": [
     "metagenomics",
@@ -338,7 +339,7 @@
   "excluded": [
     "kaiju — taxonomic profiling with kaiju; not portable: the process is absent from upstream nf-core/mag 5.5.0 entirely (removed upstream), so there is no module script to translate",
     "diamond — taxonomic profiling with diamond; same as kaiju: absent from upstream 5.5.0, no module script to translate",
-    "nf-core boilerplate files (pipeline_summary/methods_description, versions.yml) — not part of the analysis"
+    "nf-core boilerplate files (pipeline_summary/methods_description) — not part of the analysis. Note: the versions.yml half is since covered by the engine-native export `oxo-flow report --versions-yml` (engine >= 0.17.0)"
   ],
   "rule_count": 352,
   "tools": [
@@ -381,7 +382,7 @@
   ],
   "description": "Turn paired-end metagenomic reads into quality-checked, taxonomically classified draft genomes: FastQC and fastp QC with phiX removal, SPAdes and MEGAHIT assembly, QUAST and Prodigal assessment, bowtie2 mapping, binning with six binners (MetaBAT2, MaxBin2, CONCOCT, COMEBin, MetaBinner, SemiBin2), BUSCO bin QC, GTDB-Tk classification with a combined summary, PROKKA annotation, ALE evaluation and a final MultiQC report. The default short-read path of nf-core/mag, faithfully ported with the same tool versions and commands. Optional upstream branches are ported as when-gated rules, all off by default: host read removal (config.host_fasta), read normalization (config.bbnorm), adapterremoval/trimmomatic clipping (config.clip_tool), DAS Tool bin refinement (config.refine_bins_dastool), CheckM bin QC (config.run_checkm), CheckM2 bin QC (config.run_checkm2), GUNC contamination QC (config.run_gunc), Tiara domain classification (config.bin_domain_classification), CAT/BAT bin classification (config.cat_db) and virus identification with geNomad (config.run_virus_identification).",
   "installation": {
-    "engine": "oxo-flow >= 0.12.0",
+    "engine": "oxo-flow >= 0.17.0",
     "toolchain": "conda envs — pinned",
     "requirements": [
       "input: paired-end reads as {sample}_R1.fastq.gz / {sample}_R2.fastq.gz in config.input_dir (default test/fixtures/raw); uniform single-end libraries runnable via config.sample_pattern override; interleaved and mixed-library samplesheets not ported",
