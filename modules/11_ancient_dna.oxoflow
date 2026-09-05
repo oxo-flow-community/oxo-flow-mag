@@ -16,8 +16,8 @@ description = "nf-core/mag 5.5.0 ancient_dna fragment (upstream params.ancient_d
 name = "pydamage_analyze_spades"
 when = "config.ancient_dna"
 input = [
-    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}.bam",
-    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}.bam.bai",
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam",
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam.bai",
 ]
 output = [
     "intermediates/ancient_dna/SPAdes/SPAdes-{sample}_pydamage_results.csv",
@@ -30,9 +30,9 @@ mkdir -p intermediates/ancient_dna/SPAdes
 mkdir -p .tmp/pydamage_analyze_spades_{sample} && cd .tmp/pydamage_analyze_spades_{sample}
 export NUMBA_CACHE_DIR=./tmp
 export MPLCONFIGDIR=./tmp
-ln -sf "$wd/intermediates/binning/alignments/SPAdes/SPAdes-{sample}.bam" .
-ln -sf "$wd/intermediates/binning/alignments/SPAdes/SPAdes-{sample}.bam.bai" .
-pydamage analyze -p {threads} SPAdes-{sample}.bam
+ln -sf "$wd/intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam" .
+ln -sf "$wd/intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam.bai" .
+pydamage analyze -p {threads} SPAdes-{sample}-{sample}.bam
 mv pydamage_results/pydamage_results.csv "$wd/intermediates/ancient_dna/SPAdes/SPAdes-{sample}_pydamage_results.csv"
 cd "$wd"
 rm -rf .tmp/pydamage_analyze_spades_{sample}
@@ -50,8 +50,8 @@ conda = "envs/pydamage.yaml"
 name = "pydamage_analyze_megahit"
 when = "config.ancient_dna"
 input = [
-    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}.bam",
-    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}.bam.bai",
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam",
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam.bai",
 ]
 output = [
     "intermediates/ancient_dna/MEGAHIT/MEGAHIT-{sample}_pydamage_results.csv",
@@ -64,9 +64,9 @@ mkdir -p intermediates/ancient_dna/MEGAHIT
 mkdir -p .tmp/pydamage_analyze_megahit_{sample} && cd .tmp/pydamage_analyze_megahit_{sample}
 export NUMBA_CACHE_DIR=./tmp
 export MPLCONFIGDIR=./tmp
-ln -sf "$wd/intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}.bam" .
-ln -sf "$wd/intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}.bam.bai" .
-pydamage analyze -p {threads} MEGAHIT-{sample}.bam
+ln -sf "$wd/intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam" .
+ln -sf "$wd/intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam.bai" .
+pydamage analyze -p {threads} MEGAHIT-{sample}-{sample}.bam
 mv pydamage_results/pydamage_results.csv "$wd/intermediates/ancient_dna/MEGAHIT/MEGAHIT-{sample}_pydamage_results.csv"
 cd "$wd"
 rm -rf .tmp/pydamage_analyze_megahit_{sample}
@@ -143,8 +143,8 @@ name = "ancient_consensus_spades"
 when = "config.ancient_dna"
 input = [
     "intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa",
-    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}.bam",
-    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}.bam.bai",
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam",
+    "intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam.bai",
     "intermediates/ancient_dna/SPAdes/SPAdes-{sample}_pydamage_filtered_results.csv",
 ]
 output = [
@@ -158,10 +158,10 @@ wd=$(pwd)
 mkdir -p .tmp/ancient_consensus_spades_{sample} && cd .tmp/ancient_consensus_spades_{sample}
 ln -sf "$wd/intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa" ref.fa
 samtools faidx ref.fa
-ln -sf "$wd/intermediates/binning/alignments/SPAdes/SPAdes-{sample}.bam" .
-ln -sf "$wd/intermediates/binning/alignments/SPAdes/SPAdes-{sample}.bam.bai" .
+ln -sf "$wd/intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam" .
+ln -sf "$wd/intermediates/binning/alignments/SPAdes/SPAdes-{sample}-{sample}.bam.bai" .
 # freebayes recall (upstream aDNA branch passes no ext.args)
-freebayes -f ref.fa SPAdes-{sample}.bam > recal.vcf
+freebayes -f ref.fa SPAdes-{sample}-{sample}.bam > recal.vcf
 bgzip -c recal.vcf > "$wd/intermediates/ancient_dna/SPAdes/SPAdes-{sample}_recalibrated.vcf.gz"
 tabix -p vcf "$wd/intermediates/ancient_dna/SPAdes/SPAdes-{sample}_recalibrated.vcf.gz"
 # bcftools consensus applies the recalibrated variants to the assembly
@@ -186,8 +186,8 @@ name = "ancient_consensus_megahit"
 when = "config.ancient_dna"
 input = [
     "intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa",
-    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}.bam",
-    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}.bam.bai",
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam",
+    "intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam.bai",
     "intermediates/ancient_dna/MEGAHIT/MEGAHIT-{sample}_pydamage_filtered_results.csv",
 ]
 output = [
@@ -201,9 +201,9 @@ wd=$(pwd)
 mkdir -p .tmp/ancient_consensus_megahit_{sample} && cd .tmp/ancient_consensus_megahit_{sample}
 ln -sf "$wd/intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa" ref.fa
 samtools faidx ref.fa
-ln -sf "$wd/intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}.bam" .
-ln -sf "$wd/intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}.bam.bai" .
-freebayes -f ref.fa MEGAHIT-{sample}.bam > recal.vcf
+ln -sf "$wd/intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam" .
+ln -sf "$wd/intermediates/binning/alignments/MEGAHIT/MEGAHIT-{sample}-{sample}.bam.bai" .
+freebayes -f ref.fa MEGAHIT-{sample}-{sample}.bam > recal.vcf
 bgzip -c recal.vcf > "$wd/intermediates/ancient_dna/MEGAHIT/MEGAHIT-{sample}_recalibrated.vcf.gz"
 tabix -p vcf "$wd/intermediates/ancient_dna/MEGAHIT/MEGAHIT-{sample}_recalibrated.vcf.gz"
 bcftools consensus "$wd/intermediates/ancient_dna/MEGAHIT/MEGAHIT-{sample}_recalibrated.vcf.gz" < ref.fa > consensus.fa
