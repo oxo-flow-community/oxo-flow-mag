@@ -146,7 +146,7 @@ Override any config value on the command line with `KEY=VALUE` arguments (`oxo-f
 | `gtdbtk_single_job` option | Not ported | Off by default upstream |
 | `gtdbtk_use_full_tree` / `gtdbtk_place_species` | Config keys not exposed | Off by default upstream |
 | Empty bin groups crash upstream (BUSCO on no input) | Empty groups produce empty/touched outputs and skip downstream classification | The pipeline never fails on empty groups |
-| nf-core boilerplate (`versions.yml`) | engine-native export: `oxo-flow report --versions-yml <file> main.oxoflow` | oxo-flow ≥ 0.17.0 exports an nf-core-style `versions.yml` derived statically from the workflow declarations: one entry per rule (311 rules) with the pinned conda environment, or a `system` entry with an explicit "no software versions declared" note where no env is declared. Deviation: it is a standalone CI-diff artifact, not a per-process runtime capture — per-rule `versions.yml` emission inside every command is deliberately not replicated (it would change every rule's command while the default plan stays byte-identical). |
+| nf-core boilerplate (`versions.yml`) | engine-native export: `oxo-flow report --versions-yml <file> main.oxoflow` | oxo-flow ≥ 0.17.0 exports an nf-core-style `versions.yml` derived statically from the workflow declarations: one entry per rule (352 rules) with the pinned conda environment, or a `system` entry with an explicit "no software versions declared" note where no env is declared. Deviation: it is a standalone CI-diff artifact, not a per-process runtime capture — per-rule `versions.yml` emission inside every command is deliberately not replicated (it would change every rule's command while the default plan stays byte-identical). |
 | nf-core boilerplate (pipeline_summary, methods_description) | Not ported | Not analysis output |
 | `*-busco.batch_summary.failed.txt` | Not produced | Only exists upstream when a BUSCO run failed |
 | `results/GenomeBinning/QC/BUSCO/` flat short_summaries | Published into the same per-group dir as upstream | Same publish pattern `*{.txt,.json,.log}` |
@@ -189,7 +189,7 @@ Override any config value on the command line with `KEY=VALUE` arguments (`oxo-f
 | CAT/BAT bin classification | `cat_db = "path/to/db.tar.gz"` | 38 | `CAT/BAT` subworkflow bins column (cat 6.0.1; `cat_allow_unofficial_lineages` toggles `--only_official`) |
 | Virus identification | `run_virus_identification = true` | 3 | `GENOMAD_ENDTOEND` (genomad 1.11.2, `genomad_db`) |
 
-Each gate activates exactly its own branch: with the default config the executed plan (134 rules of 311 total) is identical to the pre-branch port, and toggling one key adds only that branch's rules (verified by `dry-run` per key).
+Each gate activates exactly its own branch: with the default config the executed plan (134 rules of 352 total) is identical to the pre-branch port, and toggling one key adds only that branch's rules (verified by `dry-run` per key).
 
 ### Not ported (with reasons)
 

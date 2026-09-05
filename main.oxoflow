@@ -72,7 +72,7 @@ phix_reference = "assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz"
 # directory (upstream --gtdb_db, ~100GB). oxo-flow cannot download it
 # mid-run (the prep rule only unpacks), so the default is empty and
 # run_gtdbtk=true fails fast until a local path is set.
-gtdb_db = "/data/home/wsx/databases/gtdb-r232/gtdbtk_r232_data.tar.gz"
+gtdb_db = ""
 # GTDB-Tk gate: the ~100GB reference database is user-provided (see the
 # README requirements); run_gtdbtk=false runs the full pipeline minus the
 # GTDB-Tk classification (the documented live-test contract).
