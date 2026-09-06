@@ -148,7 +148,7 @@ Override any config value on the command line with `KEY=VALUE` arguments (`oxo-f
 | Empty bin groups crash upstream (BUSCO on no input) | Empty groups produce empty/touched outputs and skip downstream classification | The pipeline never fails on empty groups |
 | nf-core boilerplate (`versions.yml`) | engine-native export: `oxo-flow report --versions-yml <file> main.oxoflow` | oxo-flow ≥ 0.17.0 exports an nf-core-style `versions.yml` derived statically from the workflow declarations: one entry per rule (352 rules) with the pinned conda environment, or a `system` entry with an explicit "no software versions declared" note where no env is declared. Deviation: it is a standalone CI-diff artifact, not a per-process runtime capture — per-rule `versions.yml` emission inside every command is deliberately not replicated (it would change every rule's command while the default plan stays byte-identical). |
 | nf-core boilerplate (pipeline_summary, methods_description) | Not ported | Not analysis output |
-| `*-busco.batch_summary.failed.txt` | Not produced | Only exists upstream when a BUSCO run failed |
+| `*-busco.batch_summary.failed.txt` | Produced on failure | The port reproduces the upstream failure-only artifact: when BUSCO yields no `batch_summary.txt` the rule copies the empty summary to `*-busco.batch_summary.failed.txt` (upstream exits non-zero at process level; the port keeps the marker and lets consumers skip) |
 | `results/GenomeBinning/QC/BUSCO/` flat short_summaries | Published into the same per-group dir as upstream | Same publish pattern `*{.txt,.json,.log}` |
 | Conda environments | `envs/*.yaml` with the same pins | `tar` added to `gunzip`/`gtdbtk_db_preparation` because there is no container layer; `split_fasta` and `mag_depths` pin `conda-forge::pandas=1.1.5` exactly like upstream (the other pins use the `bioconda::` channel prefix instead of `conda-forge::` — same package, same version) |
 | QUAST_BINS / BUSCO / GTDB-Tk file names | `{assembler}-{binner}-unclassified-unrefined-{sample}[-unbinned]-...` in summary names, QC dirs and input globs | Matches upstream meta naming (`domain=unclassified`, `refinement=unrefined`/`unrefined_unbinned`); the port previously omitted `{sample}` from QUAST summary names and used `-unclassified-unrefined-` in bin input globs, where the files are actually named `{assembler}-{binner}-{sample}*` — the globs matched nothing (fixed) |
@@ -188,18 +188,22 @@ Override any config value on the command line with `KEY=VALUE` arguments (`oxo-f
 | Tiara domain classification | `bin_domain_classification = true` | 39 | `TIARA` subworkflow (tiara 1.0.3, `tiara_min_length`) |
 | CAT/BAT bin classification | `cat_db = "path/to/db.tar.gz"` | 38 | `CAT/BAT` subworkflow bins column (cat 6.0.1; `cat_allow_unofficial_lineages` toggles `--only_official`) |
 | Virus identification | `run_virus_identification = true` | 3 | `GENOMAD_ENDTOEND` (genomad 1.11.2, `genomad_db`) |
+| Long-read assembly and binning | `long_reads = "reads.fastq.gz"` (+ `long_reads_platform`) | 10 | `FLYE` + `MetaMDBG` + minimap2 binning prep + MetaBAT2/MaxBin2/CONCOCT (see `modules/12_longreads.oxoflow`; the QC/polish/host-removal wrappers upstream runs around this are not ported — see Not ported) |
+| Ancient DNA | `ancient_dna = true` | 7 | pydamage analyze/filter (megahit + spades), freebayes/bcftools ancient consensus (`modules/11_ancient_dna.oxoflow`) |
+| CAT/BAT unbinned-contigs classification | `cat_db` + `cat_classify_unbinned = true` | 16 | second `CAT_pack` pass over the chunked contigs (`modules/09_catpack.oxoflow`) |
 
 Each gate activates exactly its own branch: with the default config the executed plan (134 rules of 352 total) is identical to the pre-branch port, and toggling one key adds only that branch's rules (verified by `dry-run` per key).
 
 ### Not ported (with reasons)
 
-- **Long-read assembly and binning** (`--longreads`): the upstream longreads subworkflow doubles the whole binning graph (every assembler x binner x sample) and needs long-read input files the paired-end `{sample}_R1/_R2` input model does not provide.
-- **Kaiju and diamond taxonomic profiling**: absent from upstream 5.5.0 entirely (removed upstream) — there is no module script to translate.
-- **Multi-library lanes** (upstream `--input` samplesheet rows listing several FASTQ pairs per sample): the port's reads_sheet covers one stream per row (`pe` / `single` / `interleaved`); a sample assembled from multiple paired libraries would need lane-concatenation rules that the port does not ship.
-- **Ancient DNA** (`--ancient_dna`): rewires the workflow at 8 points — skips host removal, phiX removal and assembly; adds pydamage damage correction and freebayes/bcftools SNP calling into the GTDB-Tk filter and bin summary — for a niche off-by-default parameter; porting it would double the rule graph around the QC and taxonomy stages.
-- **CAT/BAT unbinned-contigs classification** (`--cat_classify_unbinned`, upstream default `false`): the ported CAT branch classifies binned contigs only; the unbinned column would add a second full `CAT_pack` pass over the chunked contigs, which are already classified by Tiara in the `bin_domain_classification` branch.
-- **Pydamage report page**: part of the ancient DNA branch (above); the CheckM2 and GUNC report pages are ported with their tools.
-- **BUSCO `*-busco.batch_summary.failed.txt`**: only exists upstream when a BUSCO run failed — an error-only artifact.
+- **Long-read preprocessing QC** (chopper / nanoq / nanolyse / porechop(+abi) / filtlong / nanoplot; upstream `preprocessing_longread`, QC on by default — `skip_longread_qc=false`): upstream long-read path trims/filters/QC-reports raw reads before assembly; the port long-read branch (`config.long_reads`) takes QC-passed FASTQ instead.
+- **Long-read host removal** (upstream `hostremoval_longread`, minimap2 + samtools chain): runs upstream when `host_fasta` is supplied; the port removes hosts on the short-read path only.
+- **SPAdesHybrid / pypolca** (upstream hybrid assembly `assembly_hybrid` + short-read polish `PYPOLCA_RUN` of long-read assemblies): not ported.
+- **metaeuk / mmseqs** (upstream `metaeuk/easypredict` gene prediction + `mmseqs/databases` download): not ported.
+- **BigMAG summary** (`generate_bigmag_file`, upstream `PREPARE_BIGMAG_SUMMARY`): not ported.
+- **Kaiju**: absent from upstream 5.5.0 entirely (removed upstream) — there is no module script to translate. **Diamond**: no standalone diamond profiling process exists upstream (only an optional `diamond_table` input the CAT/BAT modules accept but the workflow never supplies) — nothing user-facing to port.
+- **Multi-library lanes** (upstream `--input` samplesheet rows listing several FASTQ pairs per sample; upstream merges lanes with `seqtk mergepe`): the port's reads_sheet covers one stream per row (`pe` / `single` / `interleaved`); a sample assembled from multiple paired libraries would need lane-concatenation rules that the port does not ship.
+- **Pydamage report page**: not part of the 7-rule ancient DNA branch above; the CheckM2 and GUNC report pages are ported with their tools.
 - **nf-core boilerplate files** (pipeline_summary, methods_description): not analysis output. The `versions.yml` half is covered by the engine-native export (`oxo-flow report --versions-yml <file> main.oxoflow`, see table).
 
 ## Test
