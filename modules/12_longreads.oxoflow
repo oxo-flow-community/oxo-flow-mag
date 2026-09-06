@@ -10,9 +10,11 @@ description = "nf-core/mag 5.5.0 longreads fragment (upstream long-read branches
 # one-LR-library run shape); the platform follows
 # config.long_reads_platform (--nano-raw|--nano-hq|--pacbio-raw|
 # --pacbio-hifi, default --nano-raw) which also derives MetaMDBG's
-# ont/hifi mode. NanoPlot/filtlong QC + long-read host removal are
-# upstream-off-equivalent here (skip via the same default-empty
-# config.host_fasta contract as the short-read branch).
+# ont/hifi mode. The upstream preprocessing_longread QC chain
+# (chopper/nanoq/nanolyse/porechop/filtlong/nanoplot, default ON via
+# skip_longread_qc=false) and long-read host removal are NOT ported:
+# the input is the user's QC-passed long-read FASTQ, and host removal
+# only covers the short-read path (see README Not ported).
 # Default: config.long_reads = "" -> all 10 rules prune at plan time.
 # ---------------------------------------------------------------------------
 
