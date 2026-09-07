@@ -1,0 +1,10 @@
+---
+# Environment for Filtlong — the upstream nf-core/mag 5.5.0 pin
+# (modules/nf-core/filtlong/environment.yml: bioconda::filtlong=0.2.1).
+name: filtlong
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - bioconda::filtlong=0.2.1

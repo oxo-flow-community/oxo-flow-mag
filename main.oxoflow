@@ -164,6 +164,22 @@ ancient_dna = false
 # plan time.
 long_reads = ""
 long_reads_platform = "--nano-raw"
+# Long-read preprocessing QC chain (upstream preprocessing_longread, off by
+# default — the port long-read branch currently takes QC-passed FASTQ; set
+# long_reads_qc = true to prep/QC raw long reads before assembly with the
+# upstream defaults below, mirrored from nextflow.config:
+# skip_longread_qc / skip_adapter_trimming / skip_longread_filtering /
+# keep_lambda = false; longread_adaptertrimming_tool = "porechop_abi";
+# longread_filtering_tool = "chopper"; longreads_min_length = 1000;
+# longreads_min_quality = unset; longreads_keep_percent = 90;
+# longreads_length_weight = 10).
+long_reads_qc = false
+longread_adaptertrimming_tool = "porechop_abi"
+longread_filtering_tool = "chopper"
+longreads_min_length = 1000
+longreads_keep_percent = 90
+longreads_length_weight = 10
+longreads_min_quality = ""
 # Unbinned-contigs classification (upstream --cat_classify_unbinned, default
 # false): a second CAT_pack bins pass over the SPLIT_FASTA unbinned chunks of
 # every binner. Off by default — the binned-contigs column is the analysis
@@ -234,3 +250,6 @@ path = "modules/11_ancient_dna.oxoflow"
 
 [[include]]
 path = "modules/12_longreads.oxoflow"
+
+[[include]]
+path = "modules/13_longread_qc.oxoflow"

@@ -1,0 +1,10 @@
+---
+# Environment for Nanoq — the upstream nf-core/mag 5.5.0 pin
+# (modules/nf-core/nanoq/environment.yml: bioconda::nanoq=0.10.0).
+name: nanoq
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - bioconda::nanoq=0.10.0

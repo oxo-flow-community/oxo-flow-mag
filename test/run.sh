@@ -51,4 +51,37 @@ rm -f .bigmag-test-tmp.oxoflow
 trap - EXIT
 echo "  bigmag_summary on when generate_bigmag_file is set; off by default"
 
-echo "PASS (static acceptance + BigMAG branch flip)"
+echo "==> Long-read QC branch: dry-run with long_reads + long_reads_qc"
+# Upstream LONGREAD_PREPROCESSING (subworkflows/local/preprocessing_longread):
+# NanoPlot (raw) -> adapter trimming (Porechop/Porechop-ABI, ONT) -> NanoLyse
+# (unless lambda-removal is chopper's job) -> filtering (Filtlong|Nanoq|Chopper
+# per longread_filtering_tool) -> host removal (host_fasta) -> NanoPlot
+# (filtered). Defaults mirrored from upstream nextflow.config:
+# longread_adaptertrimming_tool = porechop_abi, longread_filtering_tool =
+# chopper. The port gates the whole chain on config.long_reads_qc.
+sed -e 's|^long_reads = ""$|long_reads = "test/fixtures/longreads_IL1.fastq.gz"|' \
+    -e 's|^long_reads_qc = false$|long_reads_qc = true|' \
+    main.oxoflow > .lrqc-test-tmp.oxoflow
+grep -q '^long_reads = "test/fixtures/longreads_IL1.fastq.gz"' .lrqc-test-tmp.oxoflow
+grep -q '^long_reads_qc = true' .lrqc-test-tmp.oxoflow
+trap 'rm -f .lrqc-test-tmp.oxoflow' EXIT
+"$OXO" dry-run .lrqc-test-tmp.oxoflow --samples first:1 > /tmp/oxo-dryrun-lrqc-$$.txt 2>&1
+grep -qE "^  [0-9]+\. nanoplot_raw_lr[^ ]*  \[run" /tmp/oxo-dryrun-lrqc-$$.txt \
+    || { echo "Long-read QC: nanoplot_raw_lr not scheduled"; exit 1; }
+grep -qE "^  [0-9]+\. porechop_abi_lr[^ ]*  \[run" /tmp/oxo-dryrun-lrqc-$$.txt \
+    || { echo "Long-read QC: porechop_abi_lr not scheduled (default adaptertrimming_tool)"; exit 1; }
+grep -qE "^  [0-9]+\. chopper_lr[^ ]*  \[run" /tmp/oxo-dryrun-lrqc-$$.txt \
+    || { echo "Long-read QC: chopper_lr not scheduled (default filtering_tool)"; exit 1; }
+grep -qE "^  [0-9]+\. flye_lr[^ ]*  \[run" /tmp/oxo-dryrun-lrqc-$$.txt \
+    || { echo "Long-read QC: flye_lr not scheduled downstream"; exit 1; }
+if grep -qE "^  [0-9]+\. nanoplot_raw_lr[^ ]*  \[run" /tmp/oxo-dryrun-$$.txt; then
+    echo "Long-read QC: nanoplot_raw_lr scheduled with default config"; exit 1
+fi
+if grep -qE "^  [0-9]+\. porechop_lr[^ ]*  \[run" /tmp/oxo-dryrun-lrqc-$$.txt; then
+    echo "Long-read QC: porechop_lr scheduled despite porechop_abi default"; exit 1
+fi
+rm -f .lrqc-test-tmp.oxoflow
+trap - EXIT
+echo "  LR QC chain on when long_reads + long_reads_qc are set; off by default"
+
+echo "PASS (static acceptance + BigMAG + Long-read QC branch flips)"

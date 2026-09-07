@@ -379,8 +379,6 @@
     "concoct_lr_metamdbg"
   ],
   "excluded": [
-    "Long-read preprocessing QC (chopper / nanoq / nanolyse / porechop(+abi) / filtlong / nanoplot — upstream `preprocessing_longread`, default ON via skip_longread_qc=false) — not ported; the port long-read branch starts from QC-passed FASTQ (see the 12_longreads header note)",
-    "Long-read host removal (minimap2 + samtools chain, upstream hostremoval_longread — runs when host_fasta is supplied) — not ported; short-read host removal is ported, long-read is not",
     "SPAdesHybrid / METASPADESHYBRID hybrid assembly (upstream assembly_hybrid, skip_spadeshybrid=false default) and pypolca short-read polish of long-read assemblies (workflows/mag.nf pypolca on ch_longread_assemblies) — not ported",
     "metaeuk / mmseqs (eukaryotic bin gene prediction + metaeuk_mmseqs_db database download, upstream mmseqs/databases + metaeuk/easypredict) — not ported",
     "seqtk mergepe multi-library lane merge (upstream preprocessing_shortread Run/Lane merging) — not ported; the port reads_sheet covers one stream per row (see README Multi-library lanes)"
@@ -390,7 +388,7 @@
     "diamond — taxonomic profiling with diamond; upstream 5.5.0 has no standalone diamond profiling process — the only diamond reference is an optional `diamond_table` input the CAT/BAT modules accept but the upstream workflow never supplies, so there is no user-facing diamond feature to port",
     "nf-core boilerplate files (pipeline_summary/methods_description) — not part of the analysis. Not"
   ],
-  "rule_count": 353,
+  "rule_count": 363,
   "tools": [
     "adapterremoval",
     "ale",

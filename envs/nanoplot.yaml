@@ -1,0 +1,10 @@
+---
+# Environment for NanoPlot — the upstream nf-core/mag 5.5.0 pin
+# (modules/nf-core/nanoplot/environment.yml: bioconda::nanoplot=1.46.1).
+name: nanoplot
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10
+  - bioconda::nanoplot=1.46.1

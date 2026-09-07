@@ -1,0 +1,357 @@
+# LONGREAD_PREPROCESSING + LONGREAD_HOSTREMOVAL (nf-core/mag 5.5.0) —
+# port of upstream subworkflows/local/preprocessing_longread/main.nf and
+# subworkflows/local/hostremoval_longread/main.nf. A single raw long-read
+# FASTQ (config.long_reads) goes through: NanoPlot (raw) → adapter trimming
+# (Porechop or Porechop-ABI, ONT only — PacBio bypasses, no trimming tool
+# exists) → NanoLyse lambda removal (unless keep_lambda or the filter tool is
+# chopper, which does lambda exclusion itself via --contam) → filtering
+# (Filtlong | Nanoq | Chopper, per config.longread_filtering_tool) → host
+# removal (minimap2 align + samtools unmapped, when config.host_fasta is set)
+# → NanoPlot (filtered) → assembly_longread.
+#
+# Gated on config.long_reads_qc (default false: the port long-read branch
+# takes QC-passed FASTQ, the pre-existing documented divergence). The
+# chain's stages are when-gated exactly like upstream; each stage resolves
+# its input at shell level (khmer-style): the deepest existing stage
+# output wins, else the original FASTQ.
+#
+# Upstream defaults mirrored as config keys in main.oxoflow:
+#   longread_adaptertrimming_tool = "porechop_abi"  (nextflow.config)
+#   longread_filtering_tool = "chopper"              (nextflow.config)
+#   longreads_min_length = 1000; longreads_keep_percent = 90;
+#   longreads_length_weight = 10; longreads_min_quality = unset
+#   keep_lambda = false (nanolyse off when tool == chopper anyway)
+#   lambda reference bundled at assets/data/GCA_000840245.1_ViralProj14204_genomic.fna.gz
+#     (upstream projectDir/assets/data/...; the 5.5.0 mag.nf falls back to it
+#     when params.lambda_reference is unset)
+
+[workflow]
+name = "13_longread_qc"
+description = "nf-core/mag 5.5.0 long-read preprocessing + QC + host removal (gated on config.long_reads_qc)"
+
+# ---------------------------------------------------------------------------
+# NanoPlot on the raw long reads (upstream NANOPLOT_RAW, conf arg:
+# "-p raw_ --title <id>_raw -c darkblue -f").
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "nanoplot_raw_lr"
+when = "config.long_reads_qc"
+input = ["{config.long_reads}"]
+output = ["intermediates/longread_qc/NanoPlot/raw_NanoPlot.html"]
+description = "NANOPLOT_RAW: NanoPlot report on raw long reads (upstream NANOPLOT_RAW; declares the deterministic NanoPlot html; the sibling png/txt reports are extra outputs of the same run)"
+shell = """
+mkdir -p intermediates/longread_qc/NanoPlot
+NanoPlot \\
+    -p raw_ \\
+    --title raw \\
+    -c darkblue \\
+    -f \\
+    -t {threads} \\
+    --fastq {config.long_reads} \\
+    -o intermediates/longread_qc/NanoPlot/
+"""
+
+[rules.resources]
+threads = 2
+memory = "6G"
+
+[rules.environment]
+conda = "envs/nanoplot.yaml"
+
+# ---------------------------------------------------------------------------
+# Adapter trimming. Upstream: ONT reads only (PacBio bypasses — no trimming
+# tool for them); when !skip_adapter_trimming && !val_skip_qc, and the tool
+# is chosen by longread_adaptertrimming_tool. The gate below combines the
+# tool switch with the platform derivation (nano-raw|nano-hq = OXFORD_NANOPORE).
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "porechop_lr"
+when = "config.long_reads_qc && config.longread_adaptertrimming_tool == 'porechop' && (config.long_reads_platform == '--nano-raw' || config.long_reads_platform == '--nano-hq')"
+input = ["{config.long_reads}"]
+output = ["intermediates/longread_qc/trimmed.fastq.gz"]
+description = "PORECHOP: divide and shred adapter chimeras from ONT reads (upstream PORECHOP_PORECHOP)"
+shell = """
+mkdir -p intermediates/longread_qc
+porechop \\
+    -i {config.long_reads} \\
+    -t {threads} \\
+    -o intermediates/longread_qc/trimmed.fastq.gz
+"""
+
+[rules.resources]
+threads = 6
+memory = "12G"
+
+[rules.environment]
+conda = "envs/porechop.yaml"
+
+[[rules]]
+name = "porechop_abi_lr"
+when = "config.long_reads_qc && config.longread_adaptertrimming_tool == 'porechop_abi' && (config.long_reads_platform == '--nano-raw' || config.long_reads_platform == '--nano-hq')"
+input = ["{config.long_reads}"]
+output = ["intermediates/longread_qc/trimmed.fastq.gz"]
+description = "PORECHOP_ABI: ABI-based adapter trimming of ONT reads (upstream PORECHOP_ABI)"
+shell = """
+mkdir -p intermediates/longread_qc
+porechop_abi \\
+    -i {config.long_reads} \\
+    -t {threads} \\
+    -o intermediates/longread_qc/trimmed.fastq.gz
+"""
+
+[rules.resources]
+threads = 6
+memory = "12G"
+
+[rules.environment]
+conda = "envs/porechop_abi.yaml"
+
+# ---------------------------------------------------------------------------
+# NanoLyse lambda removal. Upstream gate: !params.keep_lambda &&
+# longread_filtering_tool != 'chopper' && !val_skip_qc (chopper excludes
+# lambda itself via --contam). Input is the trimmed FASTQ when trimming ran
+# (a closed gate counts as satisfied for dependents, so the relies on the
+# closed-trim rules resolve to the raw file shell-side).
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "nanolyse_lr"
+when = "config.long_reads_qc && config.longread_filtering_tool != 'chopper'"
+input = ["{config.long_reads}"]
+output = ["intermediates/longread_qc/nanolyse.fastq.gz"]
+depends_on = ["porechop_lr", "porechop_abi_lr"]
+description = "NANOLYSE: remove lambda contamination from long reads (upstream NANOLYSE; lambda ref assets/data/GCA_000840245.1_ViralProj14204_genomic.fna.gz)"
+shell = """
+mkdir -p intermediates/longread_qc
+if [ -f intermediates/longread_qc/trimmed.fastq.gz ]; then
+    LR=intermediates/longread_qc/trimmed.fastq.gz
+else
+    LR={config.long_reads}
+fi
+gunzip -c "$LR" | NanoLyse -r assets/data/GCA_000840245.1_ViralProj14204_genomic.fna.gz | gzip > intermediates/longread_qc/nanolyse.fastq.gz
+mv NanoLyse.log intermediates/longread_qc/nanolyse.log
+"""
+
+[rules.resources]
+threads = 2
+memory = "6G"
+
+[rules.environment]
+conda = "envs/nanolyse.yaml"
+
+# ---------------------------------------------------------------------------
+# Long-read filtering (one tool per config.longread_filtering_tool).
+# Upstream gate: !params.skip_longread_filtering && !val_skip_qc. Args from
+# conf/modules.config (longreads_min_length / _min_quality / _keep_percent /
+# _length_weight).
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "filtlong_lr"
+when = "config.long_reads_qc && config.longread_filtering_tool == 'filtlong'"
+input = ["{config.long_reads}"]
+output = ["intermediates/longread_qc/filtered.fastq.gz"]
+depends_on = ["porechop_lr", "porechop_abi_lr", "nanolyse_lr"]
+description = "FILTLONG: quality-filter long reads with Filtlong (upstream FILTLONG; single-end shortread assisted mode only when filter_by_shortreads enabled upstream — the port omits the short-reads join, original Phred filtering)"
+shell = """
+mkdir -p intermediates/longread_qc
+if [ -f intermediates/longread_qc/nanolyse.fastq.gz ]; then
+    LR=intermediates/longread_qc/nanolyse.fastq.gz
+elif [ -f intermediates/longread_qc/trimmed.fastq.gz ]; then
+    LR=intermediates/longread_qc/trimmed.fastq.gz
+else
+    LR={config.long_reads}
+fi
+# upstream args (conf/modules.config FILTLONG): --min_length, --keep_percent,
+# [--trim], --length_weight, and --min_mean_q only when
+# params.longreads_min_quality is set (default unset).
+filtlong_args=""
+if [ -n "{config.longreads_min_quality}" ]; then
+    filtlong_args="--min_mean_q {config.longreads_min_quality}"
+fi
+filtlong \\
+    --min_length {config.longreads_min_length} \\
+    --keep_percent {config.longreads_keep_percent} \\
+    --length_weight {config.longreads_length_weight} \\
+    $filtlong_args \\
+    "$LR" \\
+    | gzip > intermediates/longread_qc/filtered.fastq.gz
+"""
+
+[rules.resources]
+threads = 2
+memory = "6G"
+
+[rules.environment]
+conda = "envs/filtlong.yaml"
+
+[[rules]]
+name = "nanoq_lr"
+when = "config.long_reads_qc && config.longread_filtering_tool == 'nanoq'"
+input = ["{config.long_reads}"]
+output = [
+    "intermediates/longread_qc/filtered.fastq.gz",
+    "intermediates/longread_qc/nanoq_filtered.stats",
+]
+depends_on = ["porechop_lr", "porechop_abi_lr", "nanolyse_lr"]
+description = "NANOQ: quality filter long reads with Nanoq (upstream NANOQ)"
+shell = """
+mkdir -p intermediates/longread_qc
+if [ -f intermediates/longread_qc/nanolyse.fastq.gz ]; then
+    LR=intermediates/longread_qc/nanolyse.fastq.gz
+elif [ -f intermediates/longread_qc/trimmed.fastq.gz ]; then
+    LR=intermediates/longread_qc/trimmed.fastq.gz
+else
+    LR={config.long_reads}
+fi
+nanoq \\
+    -i "$LR" \\
+    --min-len {config.longreads_min_length} \\
+    -o intermediates/longread_qc/filtered.fastq.gz \\
+    -r intermediates/longread_qc/nanoq_filtered.stats
+"""
+
+[rules.resources]
+threads = 2
+memory = "6G"
+
+[rules.environment]
+conda = "envs/nanoq.yaml"
+
+[[rules]]
+name = "chopper_lr"
+when = "config.long_reads_qc && config.longread_filtering_tool == 'chopper'"
+input = ["{config.long_reads}"]
+output = ["intermediates/longread_qc/filtered.fastq.gz"]
+depends_on = ["porechop_lr", "porechop_abi_lr"]
+description = "CHOPPER: quality filter long reads with Chopper (upstream CHOPPER)"
+shell = """
+mkdir -p intermediates/longread_qc
+if [ -f intermediates/longread_qc/trimmed.fastq.gz ]; then
+    LR=intermediates/longread_qc/trimmed.fastq.gz
+else
+    LR={config.long_reads}
+fi
+zcat "$LR" | chopper \\
+    --threads {threads} \\
+    --minlength {config.longreads_min_length} \\
+    | gzip > intermediates/longread_qc/filtered.fastq.gz
+"""
+
+[rules.resources]
+threads = 2
+memory = "6G"
+
+[rules.environment]
+conda = "envs/chopper.yaml"
+
+# ---------------------------------------------------------------------------
+# Long-read host removal (upstream LONGREAD_HOSTREMOVAL, minimap2 + samtools;
+# port pipeline for the single-FASTQ shape — index, align, unmapped, all in
+# one rule-chain with per-stage when gates). Upstream runs it when
+# params.host_fasta || params.host_genome; the port uses config.host_fasta.
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "host_removal_lr_index"
+when = "config.long_reads_qc && config.host_fasta != ''"
+input = ["{config.host_fasta}"]
+output = ["intermediates/longread_qc/host_index/mm"]
+description = "MINIMAP2_HOST_INDEX: minimap2 index of the host reference (upstream MINIMAP2_HOST_INDEX; standalone — the align rule depends on it)"
+shell = """
+mkdir -p intermediates/longread_qc/host_index
+minimap2 \\
+    -t {threads} \\
+    -d intermediates/longread_qc/host_index/mm \\
+    {config.host_fasta}
+"""
+
+[rules.resources]
+threads = 4
+memory = "12G"
+
+[rules.environment]
+conda = "envs/minimap2_samtools.yaml"
+
+[[rules]]
+name = "host_removal_lr"
+when = "config.long_reads_qc && config.host_fasta != ''"
+input = ["{config.long_reads}"]
+output = [
+    "intermediates/longread_qc/hostremoved.fastq.gz",
+    "intermediates/longread_qc/host_stats.txt",
+]
+depends_on = ["host_removal_lr_index", "filtlong_lr", "nanoq_lr", "chopper_lr", "nanolyse_lr", "porechop_lr", "porechop_abi_lr"]
+description = "MINIMAP2_HOST_ALIGN + SAMTOOLS_HOSTREMOVED_UNMAPPED: align long reads to host and keep unmapped (upstream LONGREAD_HOSTREMOVAL)"
+shell = """
+mkdir -p intermediates/longread_qc
+if [ -f intermediates/longread_qc/filtered.fastq.gz ]; then
+    LR=intermediates/longread_qc/filtered.fastq.gz
+elif [ -f intermediates/longread_qc/nanolyse.fastq.gz ]; then
+    LR=intermediates/longread_qc/nanolyse.fastq.gz
+elif [ -f intermediates/longread_qc/trimmed.fastq.gz ]; then
+    LR=intermediates/longread_qc/trimmed.fastq.gz
+else
+    LR={config.long_reads}
+fi
+case "{config.long_reads_platform}" in
+    --nano-raw|-nano-raw) MAPX="map-ont" ;;
+    --nano-hq) MAPX="map-ont" ;;
+    --pacbio-raw) MAPX="map-pb" ;;
+    --pacbio-hifi) MAPX="map-hifi" ;;
+    *) MAPX="map-ont" ;;
+esac
+minimap2 \\
+    $MAPX \\
+    -t {threads} \\
+    -a \\
+    intermediates/longread_qc/host_index/mm \\
+    "$LR" \\
+    | samtools view -b -f 4 \\
+    | samtools fastq --threads {threads} -0 intermediates/longread_qc/hostremoved.fastq.gz -
+"""
+
+[rules.resources]
+threads = 4
+memory = "12G"
+
+[rules.environment]
+conda = "envs/minimap2_samtools.yaml"
+
+# ---------------------------------------------------------------------------
+# NanoPlot on the post-QC long reads (upstream NANOPLOT_FILTERED; conf arg
+# "-p filtered_ --title <id>_filtered -c darkblue -f").
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "nanoplot_filtered_lr"
+when = "config.long_reads_qc"
+input = ["{config.long_reads}"]
+output = ["intermediates/longread_qc/NanoPlot/filtered_NanoPlot.html"]
+depends_on = ["filtlong_lr", "nanoq_lr", "chopper_lr", "nanolyse_lr", "porechop_lr", "porechop_abi_lr", "host_removal_lr"]
+description = "NANOPLOT_FILTERED: NanoPlot report on the filtered long reads (upstream NANOPLOT_FILTERED; declares the deterministic NanoPlot html)"
+shell = """
+mkdir -p intermediates/longread_qc/NanoPlot
+if [ -f intermediates/longread_qc/hostremoved.fastq.gz ]; then
+    LR=intermediates/longread_qc/hostremoved.fastq.gz
+elif [ -f intermediates/longread_qc/filtered.fastq.gz ]; then
+    LR=intermediates/longread_qc/filtered.fastq.gz
+elif [ -f intermediates/longread_qc/nanolyse.fastq.gz ]; then
+    LR=intermediates/longread_qc/nanolyse.fastq.gz
+elif [ -f intermediates/longread_qc/trimmed.fastq.gz ]; then
+    LR=intermediates/longread_qc/trimmed.fastq.gz
+else
+    LR={config.long_reads}
+fi
+NanoPlot \\
+    -p filtered_ \\
+    --title filtered \\
+    -c darkblue \\
+    -f \\
+    -t {threads} \\
+    --fastq "$LR" \\
+    -o intermediates/longread_qc/NanoPlot/
+"""
+
+[rules.resources]
+threads = 2
+memory = "6G"
+
+[rules.environment]
+conda = "envs/nanoplot.yaml"

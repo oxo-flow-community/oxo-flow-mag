@@ -11,10 +11,12 @@ description = "nf-core/mag 5.5.0 longreads fragment (upstream long-read branches
 # config.long_reads_platform (--nano-raw|--nano-hq|--pacbio-raw|
 # --pacbio-hifi, default --nano-raw) which also derives MetaMDBG's
 # ont/hifi mode. The upstream preprocessing_longread QC chain
-# (chopper/nanoq/nanolyse/porechop/filtlong/nanoplot, default ON via
-# skip_longread_qc=false) and long-read host removal are NOT ported:
-# the input is the user's QC-passed long-read FASTQ, and host removal
-# only covers the short-read path (see README Not ported).
+# (chopper/nanoq/nanolyse/porechop/filtlong/nanoplot) and long-read host
+# removal are ported separately in modules/13_longread_qc.oxoflow, gated
+# on config.long_reads_qc (default false — the port treats
+# config.long_reads as QC-passed FASTQ). When the QC chain is enabled,
+# the assembly rules below pick the QC'd file at shell level
+# (khmer-style: the deepest existing stage output wins).
 # Default: config.long_reads = "" -> all 10 rules prune at plan time.
 # ---------------------------------------------------------------------------
 
@@ -25,14 +27,29 @@ input = ["config.long_reads"]
 output = ["intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz",
     "intermediates/assembly_lr/FLYE/FLYE-longreads.assembly_info.txt",
     "{config.out_dir}/Assembly/FLYE/FLYE-longreads.flye.log"]
-depends_on = []
+# when config.long_reads_qc is on, the read file is selected shell-side
+# (QCD = hostremoved > filtered > nanolyse > trimmed > raw);
+# a closed gate counts as satisfied, so the default path is unchanged.
+depends_on = ["nanoplot_filtered_lr", "host_removal_lr", "filtlong_lr", "nanoq_lr", "chopper_lr", "nanolyse_lr", "porechop_lr", "porechop_abi_lr"]
 description = "Long-read assembly with Flye (upstream FLYE; mode from config.long_reads_platform)"
 shell = """
 wd=$(pwd)
 mode="{config.long_reads_platform}"
+# QCD file selection (long_reads_qc chain, see modules/13_longread_qc.oxoflow)
+if [ -f intermediates/longread_qc/hostremoved.fastq.gz ]; then
+    LRF=intermediates/longread_qc/hostremoved.fastq.gz
+elif [ -f intermediates/longread_qc/filtered.fastq.gz ]; then
+    LRF=intermediates/longread_qc/filtered.fastq.gz
+elif [ -f intermediates/longread_qc/nanolyse.fastq.gz ]; then
+    LRF=intermediates/longread_qc/nanolyse.fastq.gz
+elif [ -f intermediates/longread_qc/trimmed.fastq.gz ]; then
+    LRF=intermediates/longread_qc/trimmed.fastq.gz
+else
+    LRF="{config.long_reads}"
+fi
 mkdir -p intermediates/assembly_lr/FLYE {config.out_dir}/Assembly/FLYE
 rm -rf .tmp/flye_lr && mkdir -p .tmp/flye_lr && cd .tmp/flye_lr
-ln -sf "$wd/{config.long_reads}" reads.fastq
+ln -sf "$wd/$LRF" reads.fastq
 flye \
     $mode \
     reads.fastq \
@@ -60,7 +77,7 @@ when = "config.long_reads != ''"
 input = ["config.long_reads"]
 output = ["intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz",
     "{config.out_dir}/Assembly/METAMDBG/METAMDBG-longreads.metaMDBG.log"]
-depends_on = []
+depends_on = ["nanoplot_filtered_lr", "host_removal_lr", "filtlong_lr", "nanoq_lr", "chopper_lr", "nanolyse_lr", "porechop_lr", "porechop_abi_lr"]
 description = "Long-read assembly with MetaMDBG (upstream METAMDBG_ASM; ont/hifi derived from config.long_reads_platform)"
 shell = """
 wd=$(pwd)
@@ -69,9 +86,21 @@ case "{config.long_reads_platform}" in
     --nano-raw|--nano-hq) mmode="ont" ;;
     *)                    mmode="hifi" ;;
 esac
+# QCD file selection (long_reads_qc chain, see modules/13_longread_qc.oxoflow)
+if [ -f intermediates/longread_qc/hostremoved.fastq.gz ]; then
+    LRF=intermediates/longread_qc/hostremoved.fastq.gz
+elif [ -f intermediates/longread_qc/filtered.fastq.gz ]; then
+    LRF=intermediates/longread_qc/filtered.fastq.gz
+elif [ -f intermediates/longread_qc/nanolyse.fastq.gz ]; then
+    LRF=intermediates/longread_qc/nanolyse.fastq.gz
+elif [ -f intermediates/longread_qc/trimmed.fastq.gz ]; then
+    LRF=intermediates/longread_qc/trimmed.fastq.gz
+else
+    LRF="{config.long_reads}"
+fi
 mkdir -p intermediates/assembly_lr/METAMDBG {config.out_dir}/Assembly/METAMDBG
 rm -rf .tmp/metamdbg_lr && mkdir -p .tmp/metamdbg_lr && cd .tmp/metamdbg_lr
-ln -sf "$wd/{config.long_reads}" reads.fastq
+ln -sf "$wd/$LRF" reads.fastq
 metaMDBG asm \
     --threads {threads} \
     --out-dir . \
