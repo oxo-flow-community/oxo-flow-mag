@@ -12,7 +12,7 @@
     "license": "MIT"
   },
   "created": "2026-08-15",
-  "updated": "2026-09-04",
+  "updated": "2026-09-07",
   "domain": "metagenomics",
   "tags": [
     "metagenomics",
@@ -29,6 +29,7 @@
     "ale_spades",
     "bbnorm",
     "bin_summary",
+    "bigmag_summary",
     "bowtie2_align_megahit",
     "bowtie2_align_spades",
     "bowtie2_build_megahit",
@@ -382,15 +383,14 @@
     "Long-read host removal (minimap2 + samtools chain, upstream hostremoval_longread — runs when host_fasta is supplied) — not ported; short-read host removal is ported, long-read is not",
     "SPAdesHybrid / METASPADESHYBRID hybrid assembly (upstream assembly_hybrid, skip_spadeshybrid=false default) and pypolca short-read polish of long-read assemblies (workflows/mag.nf pypolca on ch_longread_assemblies) — not ported",
     "metaeuk / mmseqs (eukaryotic bin gene prediction + metaeuk_mmseqs_db database download, upstream mmseqs/databases + metaeuk/easypredict) — not ported",
-    "seqtk mergepe multi-library lane merge (upstream preprocessing_shortread Run/Lane merging) — not ported; the port reads_sheet covers one stream per row (see README Multi-library lanes)",
-    "BigMAG summary (generate_bigmag_file / prepare_bigmag_summary.py, upstream mag.nf PREPARE_BIGMAG_SUMMARY, default off) — not ported"
+    "seqtk mergepe multi-library lane merge (upstream preprocessing_shortread Run/Lane merging) — not ported; the port reads_sheet covers one stream per row (see README Multi-library lanes)"
   ],
   "not_applicable": [
     "kaiju — taxonomic profiling with kaiju; not portable: the process is absent from upstream nf-core/mag 5.5.0 entirely (removed upstream), so there is no module script to translate",
     "diamond — taxonomic profiling with diamond; upstream 5.5.0 has no standalone diamond profiling process — the only diamond reference is an optional `diamond_table` input the CAT/BAT modules accept but the upstream workflow never supplies, so there is no user-facing diamond feature to port",
     "nf-core boilerplate files (pipeline_summary/methods_description) — not part of the analysis. Not"
   ],
-  "rule_count": 352,
+  "rule_count": 353,
   "tools": [
     "adapterremoval",
     "ale",

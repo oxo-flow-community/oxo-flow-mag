@@ -142,6 +142,13 @@ gunc_db = ""
 # itself; db/ and tax/ directories are discovered inside it)
 cat_db = ""
 cat_allow_unofficial_lineages = false
+# BIgMAG summary (upstream --generate_bigmag_file, PREPARE_BIGMAG_SUMMARY):
+# one TSV joining the bin summary with the GUNC report. Upstream errors
+# unless --run_checkm2 and --run_gunc are set and BINQC/GTDB-Tk/QUAST/BUSCO
+# are not skipped; the port keeps BUSCO/QUAST/BINQC always on and gates
+# GTDB-Tk on run_gtdbtk, so the rule fails fast in-shell unless run_checkm2
+# and run_gunc are enabled too.
+generate_bigmag_file = false
 # Ancient DNA branch (upstream params.ancient_dna, default false): pydamage
 # damage assessment on the binning-prep alignments, freebayes/bcftools
 # consensus recall of the contigs, and a per-bin pydamage summary column
