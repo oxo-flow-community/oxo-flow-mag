@@ -379,7 +379,6 @@
     "concoct_lr_metamdbg"
   ],
   "excluded": [
-    "pypolca publication path — upstream publishes the corrected assemblies under Assembly/<assembler>-pypolca/, the port keeps them in intermediates/assembly/pypolca/ (intermediate output shape)",
     "metaeuk / mmseqs (eukaryotic bin gene prediction + metaeuk_mmseqs_db database download, upstream mmseqs/databases + metaeuk/easypredict) — not ported",
     "seqtk mergepe multi-library lane merge (upstream preprocessing_shortread Run/Lane merging) — not ported; the port reads_sheet covers one stream per row (see README Multi-library lanes)"
   ],

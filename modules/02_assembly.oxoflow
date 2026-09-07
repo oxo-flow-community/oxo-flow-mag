@@ -377,12 +377,16 @@ input = [
 output = [
     "intermediates/assembly/pypolca/pypolca-{sample}-flye.fasta",
     "intermediates/assembly/pypolca/pypolca-{sample}-metamdbg.fasta",
+    # upstream publishDir Assembly/<assembler>-pypolca/*_pypolca.fasta
+    # (PYPOLCA_RUN saveAs renames _corrected.fasta -> _pypolca.fasta)
+    "{config.out_dir}/Assembly/FLYE-pypolca/{sample}-pypolca.fasta",
+    "{config.out_dir}/Assembly/METAMDBG-pypolca/{sample}-pypolca.fasta",
 ]
 description = "Short-read polish of long-read assemblies with pypolca (upstream PYPOLCA_RUN, --careful; only when the sample has short reads)"
 depends_on = ["flye_lr", "metamdbg_lr", "phix_align"]
 shell = """
 wd=$(pwd)
-mkdir -p intermediates/assembly/pypolca
+mkdir -p intermediates/assembly/pypolca {config.out_dir}/Assembly/FLYE-pypolca {config.out_dir}/Assembly/METAMDBG-pypolca
 # Flye assembly
 if [ -f "$wd/intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz" ]; then
     rm -rf .tmp/pypolca_flye && mkdir -p .tmp/pypolca_flye && cd .tmp/pypolca_flye
@@ -403,7 +407,12 @@ if [ -f "$wd/intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz" ];
     # corrected FASTA contract: touch the declared output if pypolca kept
     # the input unchanged (zero improvements) — the declared output must
     # exist for the resume/edge contract.
-    [ -f out_flye/out_flye_corrected.fasta ] && cp out_flye/out_flye_corrected.fasta "$wd/intermediates/assembly/pypolca/pypolca-{sample}-flye.fasta" || touch "$wd/intermediates/assembly/pypolca/pypolca-{sample}-flye.fasta"
+    if [ -f out_flye/out_flye_corrected.fasta ]; then
+        cp out_flye/out_flye_corrected.fasta "$wd/intermediates/assembly/pypolca/pypolca-{sample}-flye.fasta"
+        cp out_flye/out_flye_corrected.fasta "$wd/{config.out_dir}/Assembly/FLYE-pypolca/{sample}-pypolca.fasta"
+    else
+        touch "$wd/intermediates/assembly/pypolca/pypolca-{sample}-flye.fasta"
+    fi
     cd "$wd" && rm -rf .tmp/pypolca_flye
 fi
 # MetaMDBG assembly
@@ -422,7 +431,12 @@ if [ -f "$wd/intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta
         --prefix out_metamdbg \\
         --careful
     [ $? -eq 0 ] || { echo "pypolca metamdbg failed for {sample}" 1>&2; exit 1; }
-    [ -f out_metamdbg/out_metamdbg_corrected.fasta ] && cp out_metamdbg/out_metamdbg_corrected.fasta "$wd/intermediates/assembly/pypolca/pypolca-{sample}-metamdbg.fasta" || touch "$wd/intermediates/assembly/pypolca/pypolca-{sample}-metamdbg.fasta"
+    if [ -f out_metamdbg/out_metamdbg_corrected.fasta ]; then
+        cp out_metamdbg/out_metamdbg_corrected.fasta "$wd/intermediates/assembly/pypolca/pypolca-{sample}-metamdbg.fasta"
+        cp out_metamdbg/out_metamdbg_corrected.fasta "$wd/{config.out_dir}/Assembly/METAMDBG-pypolca/{sample}-pypolca.fasta"
+    else
+        touch "$wd/intermediates/assembly/pypolca/pypolca-{sample}-metamdbg.fasta"
+    fi
     cd "$wd" && rm -rf .tmp/pypolca_metamdbg
 fi
 """
