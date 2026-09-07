@@ -1,0 +1,11 @@
+---
+# Environment for bigmag_summary — pinned exactly to the upstream
+# nf-core/mag 5.5.0 PREPARE_BIGMAG_SUMMARY local module environment
+# (modules/local/bigmag_summary/main.nf conda directive).
+name: bigmag_summary
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - python=3.10.6
+  - pandas=1.4.3

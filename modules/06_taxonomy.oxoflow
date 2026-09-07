@@ -1253,6 +1253,52 @@ time_limit = "4h"
 conda = "envs/bin_summary.yaml"
 
 # ---------------------------------------------------------------------------
+# BIGMAG SUMMARY (upstream PREPARE_BIGMAG_SUMMARY, prepare_bigmag_summary.py):
+# one BIgMAG TSV joining the bin summary with the GUNC report, gated on
+# generate_bigmag_file. Upstream errors at setup unless --run_checkm2 and
+# --run_gunc are set and BINQC/GTDB-Tk/QUAST/BUSCO are not skipped; the port
+# keeps BUSCO/QUAST/BINQC always on and gates GTDB-Tk on run_gtdbtk, so the
+# shell fails fast unless run_checkm2 and run_gunc are enabled too.
+# The gunc producer (concat_gunc_tsv) is itself gated on run_gunc and its
+# output is a declared input — the engine tolerates a gated producer's file
+# being absent at plan time (validate warning).
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "bigmag_summary"
+when = "config.generate_bigmag_file"
+input = [
+    "{config.out_dir}/GenomeBinning/bin_summary.tsv",
+    "{config.out_dir}/GenomeBinning/QC/gunc_summary.tsv",
+    # the helper ships in the repo, not on the env PATH (live: bare
+    # combine_tables.py -> command not found; upstream had it in the
+    # container's bin/)
+    "scripts/prepare_bigmag_summary.py",
+]
+output = ["{config.out_dir}/GenomeBinning/BIgMAG/bigmag_summary.tsv"]
+depends_on = ["bin_summary", "concat_gunc_tsv"]
+description = "Join the bin summary with the GUNC report into the BIgMAG TSV (upstream PREPARE_BIGMAG_SUMMARY)"
+shell = """
+if [ "{config.run_checkm2}" != "true" ] || [ "{config.run_gunc}" != "true" ] || [ "{config.run_gtdbtk}" != "true" ]; then
+    echo "[nf-core/mag] ERROR: To generate the BIgMAG file you need to include the parameters `--run_checkm2` and `--run_gunc`, and you cannot skip BINQC, GTDB-TK, QUAST nor BUSCO." 1>&2
+    exit 1
+fi
+args_s=""
+[ -s "{input[1]}" ] && args_s="--gunc_summary {input[1]}"
+python scripts/prepare_bigmag_summary.py \
+    --summary {input[0]} \
+    $args_s \
+    --out {output[0]}
+"""
+
+[rules.resources]
+threads = 1
+memory = "7G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/bigmag_summary.yaml"
+
+# ---------------------------------------------------------------------------
 # PROKKA (upstream runs one PROKKA process per bin, meta.id = bin name
 # minus the fasta extension; publish results/Annotation/Prokka/{assembler}/)
 # ---------------------------------------------------------------------------

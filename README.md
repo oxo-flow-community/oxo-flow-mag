@@ -146,7 +146,7 @@ Override any config value on the command line with `KEY=VALUE` arguments (`oxo-f
 | `gtdbtk_single_job` option | Not ported | Off by default upstream |
 | `gtdbtk_use_full_tree` / `gtdbtk_place_species` | Config keys not exposed | Off by default upstream |
 | Empty bin groups crash upstream (BUSCO on no input) | Empty groups produce empty/touched outputs and skip downstream classification | The pipeline never fails on empty groups |
-| nf-core boilerplate (`versions.yml`) | engine-native export: `oxo-flow report --versions-yml <file> main.oxoflow` | oxo-flow ≥ 0.17.0 exports an nf-core-style `versions.yml` derived statically from the workflow declarations: one entry per rule (352 rules) with the pinned conda environment, or a `system` entry with an explicit "no software versions declared" note where no env is declared. Deviation: it is a standalone CI-diff artifact, not a per-process runtime capture — per-rule `versions.yml` emission inside every command is deliberately not replicated (it would change every rule's command while the default plan stays byte-identical). |
+| nf-core boilerplate (`versions.yml`) | engine-native export: `oxo-flow report --versions-yml <file> main.oxoflow` | oxo-flow ≥ 0.17.0 exports an nf-core-style `versions.yml` derived statically from the workflow declarations: one entry per rule (353 rules) with the pinned conda environment, or a `system` entry with an explicit "no software versions declared" note where no env is declared. Deviation: it is a standalone CI-diff artifact, not a per-process runtime capture — per-rule `versions.yml` emission inside every command is deliberately not replicated (it would change every rule's command while the default plan stays byte-identical). |
 | nf-core boilerplate (pipeline_summary, methods_description) | Not ported | Not analysis output |
 | `*-busco.batch_summary.failed.txt` | Produced on failure | The port reproduces the upstream failure-only artifact: when BUSCO yields no `batch_summary.txt` the rule copies the empty summary to `*-busco.batch_summary.failed.txt` (upstream exits non-zero at process level; the port keeps the marker and lets consumers skip) |
 | `results/GenomeBinning/QC/BUSCO/` flat short_summaries | Published into the same per-group dir as upstream | Same publish pattern `*{.txt,.json,.log}` |
@@ -191,8 +191,9 @@ Override any config value on the command line with `KEY=VALUE` arguments (`oxo-f
 | Long-read assembly and binning | `long_reads = "reads.fastq.gz"` (+ `long_reads_platform`) | 10 | `FLYE` + `MetaMDBG` + minimap2 binning prep + MetaBAT2/MaxBin2/CONCOCT (see `modules/12_longreads.oxoflow`; the QC/polish/host-removal wrappers upstream runs around this are not ported — see Not ported) |
 | Ancient DNA | `ancient_dna = true` | 7 | pydamage analyze/filter (megahit + spades), freebayes/bcftools ancient consensus (`modules/11_ancient_dna.oxoflow`) |
 | CAT/BAT unbinned-contigs classification | `cat_db` + `cat_classify_unbinned = true` | 16 | second `CAT_pack` pass over the chunked contigs (`modules/09_catpack.oxoflow`) |
+| BIgMAG summary | `generate_bigmag_file = true` | 1 | `PREPARE_BIGMAG_SUMMARY` (`scripts/prepare_bigmag_summary.py`, pandas 1.4.3): joins `bin_summary.tsv` with the GUNC report into `GenomeBinning/BIgMAG/bigmag_summary.tsv`; upstream requires `--run_checkm2` + `--run_gunc` and no skipped BINQC/GTDB-Tk/QUAST/BUSCO — the port keeps BUSCO/QUAST/BINQC always on and the rule fails fast in-shell unless `run_checkm2`/`run_gunc`/`run_gtdbtk` are enabled |
 
-Each gate activates exactly its own branch: with the default config the executed plan (134 rules of 352 total) is identical to the pre-branch port, and toggling one key adds only that branch's rules (verified by `dry-run` per key).
+Each gate activates exactly its own branch: with the default config the executed plan (135 rules of 353 total) is identical to the pre-branch port, and toggling one key adds only that branch's rules (verified by `dry-run` per key).
 
 ### Not ported (with reasons)
 
@@ -200,7 +201,6 @@ Each gate activates exactly its own branch: with the default config the executed
 - **Long-read host removal** (upstream `hostremoval_longread`, minimap2 + samtools chain): runs upstream when `host_fasta` is supplied; the port removes hosts on the short-read path only.
 - **SPAdesHybrid / pypolca** (upstream hybrid assembly `assembly_hybrid` + short-read polish `PYPOLCA_RUN` of long-read assemblies): not ported.
 - **metaeuk / mmseqs** (upstream `metaeuk/easypredict` gene prediction + `mmseqs/databases` download): not ported.
-- **BigMAG summary** (`generate_bigmag_file`, upstream `PREPARE_BIGMAG_SUMMARY`): not ported.
 - **Kaiju**: absent from upstream 5.5.0 entirely (removed upstream) — there is no module script to translate. **Diamond**: no standalone diamond profiling process exists upstream (only an optional `diamond_table` input the CAT/BAT modules accept but the workflow never supplies) — nothing user-facing to port.
 - **Multi-library lanes** (upstream `--input` samplesheet rows listing several FASTQ pairs per sample; upstream merges lanes with `seqtk mergepe`): the port's reads_sheet covers one stream per row (`pe` / `single` / `interleaved`); a sample assembled from multiple paired libraries would need lane-concatenation rules that the port does not ship.
 - **Pydamage report page**: not part of the 7-rule ancient DNA branch above; the CheckM2 and GUNC report pages are ported with their tools.
