@@ -295,6 +295,137 @@ time_limit = "16h"
 [rules.environment]
 conda = "envs/megahit.yaml"
 
+# SPAdesHybrid (upstream HYBRID_ASSEMBLY / METASPADESHYBRID): paired-end
+# short reads + a long-read FASTQ → metaSPAdes hybrid assembly
+# (--nanopore for ONT, --pacbio for PacBio; upstream conf/modules.config
+# ext.args '--meta'). The port is gated on config.long_reads !== '' (same
+# gate as the longreads family) + the reads_sheet's paired rows — the same
+# shape as the upstream HYBRID_ASSEMBLY combine (short reads of the sample
+# joined with its long reads by sample id).
+[[rules]]
+name = "spades_hybrid"
+when = "config.long_reads != '' && !config.skip_spadeshybrid && config.reads_sheet == ''"
+input = [
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz*",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz*",
+    "{config.long_reads}",
+]
+output = [
+    "intermediates/assembly/SPAdesHybrid/SPAdesHybrid-{sample}.scaffolds.fa.gz",
+    "{config.out_dir}/Assembly/SPAdesHybrid/SPAdesHybrid-{sample}.spades.log",
+]
+description = "Hybrid assembly with metaSPAdes (short + long reads; upstream METASPADESHYBRID, ext.args '--meta')"
+depends_on = ["phix_align"]
+shell = """
+wd=$(pwd)
+# --nanopore for ONT platforms, --pacbio for PacBio (upstream branch on
+# lr_platform in HYBRID_ASSEMBLY: OXFORD_NANOPORE/…_HQ → --nanopore,
+# PACBIO_CLR/HIFI → --pacbio)
+case "{config.long_reads_platform}" in
+    --nano-raw|--nano-hq) LR_MODE="--nanopore" ;;
+    *)                    LR_MODE="--pacbio" ;;
+esac
+mkdir -p intermediates/assembly/SPAdesHybrid {config.out_dir}/Assembly/SPAdesHybrid
+rm -rf .tmp/spades_hybrid_{sample} && mkdir -p .tmp/spades_hybrid_{sample} && cd .tmp/spades_hybrid_{sample}
+ln -sf "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz" r1.fastq.gz
+ln -sf "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz" r2.fastq.gz
+ln -sf "$wd/{config.long_reads}" lr.fastq.gz
+spades.py \\
+    --meta \\
+    $LR_MODE \\
+    --threads {threads} \\
+    --memory $(( {effective_memory_mb} / 1024 )) \\
+    -1 r1.fastq.gz \\
+    -2 r2.fastq.gz \\
+    lr.fastq.gz \\
+    -o ./
+[ $? -eq 0 ] || { echo "spades.py hybrid failed for {sample}" 1>&2; exit 1; }
+if [ ! -s scaffolds.fasta ]; then
+    echo "spades produced no scaffolds for {sample}; emitting an empty assembly" 1>&2
+    touch scaffolds.fasta
+fi
+mv spades.log SPAdesHybrid-{sample}.spades.log
+mv scaffolds.fasta SPAdesHybrid-{sample}.scaffolds.fa
+gzip -n SPAdesHybrid-{sample}.scaffolds.fa
+mv SPAdesHybrid-{sample}.scaffolds.fa.gz "$wd/intermediates/assembly/SPAdesHybrid/"
+mv SPAdesHybrid-{sample}.spades.log "$wd/{config.out_dir}/Assembly/SPAdesHybrid/"
+cd "$wd"
+rm -rf .tmp/spades_hybrid_{sample}
+"""
+
+[rules.resources]
+threads = 10
+memory = "72G"
+time_limit = "24h"
+
+[rules.environment]
+conda = "envs/spades.yaml"
+
+# PYPOLCA short-read polish of long-read assemblies (upstream PYPOLCA_RUN,
+# params.run_pypolca; --careful default). Upstream requires short reads of
+# the same sample id; the port's single-longreads shape pairs the sample's
+# short reads (phix-removed) with the Flye/MetaMDBG assembly.
+[[rules]]
+name = "pypolca"
+when = "config.long_reads != '' && config.run_pypolca"
+input = [
+    "intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz",
+    "intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz*",
+    "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz*",
+]
+output = [
+    "intermediates/assembly/pypolca/pypolca-{sample}-flye.fasta",
+    "intermediates/assembly/pypolca/pypolca-{sample}-metamdbg.fasta",
+]
+description = "Short-read polish of long-read assemblies with pypolca (upstream PYPOLCA_RUN, --careful; only when the sample has short reads)"
+depends_on = ["flye_lr", "metamdbg_lr", "phix_align"]
+shell = """
+wd=$(pwd)
+mkdir -p intermediates/assembly/pypolca
+# Flye assembly
+if [ -f "$wd/intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz" ]; then
+    rm -rf .tmp/pypolca_flye && mkdir -p .tmp/pypolca_flye && cd .tmp/pypolca_flye
+    gzip -cdf "$wd/intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz" > contigs_uncompressed
+    pypolca run -a contigs_uncompressed \\
+        -1 "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz" \\
+        -2 "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz" \\
+        -t {threads} \\
+        -o out_flye \\
+        --prefix out_flye \\
+        --careful
+    [ $? -eq 0 ] || { echo "pypolca flye failed for {sample}" 1>&2; exit 1; }
+    # corrected FASTA contract: touch the declared output if pypolca kept
+    # the input unchanged (zero improvements) — the declared output must
+    # exist for the resume/edge contract.
+    [ -f out_flye/out_flye_corrected.fasta ] && cp out_flye/out_flye_corrected.fasta "$wd/intermediates/assembly/pypolca/pypolca-{sample}-flye.fasta" || touch "$wd/intermediates/assembly/pypolca/pypolca-{sample}-flye.fasta"
+    cd "$wd" && rm -rf .tmp/pypolca_flye
+fi
+# MetaMDBG assembly
+if [ -f "$wd/intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz" ]; then
+    rm -rf .tmp/pypolca_metamdbg && mkdir -p .tmp/pypolca_metamdbg && cd .tmp/pypolca_metamdbg
+    gzip -cdf "$wd/intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz" > contigs_uncompressed
+    pypolca run -a contigs_uncompressed \\
+        -1 "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz" \\
+        -2 "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz" \\
+        -t {threads} \\
+        -o out_metamdbg \\
+        --prefix out_metamdbg \\
+        --careful
+    [ $? -eq 0 ] || { echo "pypolca metamdbg failed for {sample}" 1>&2; exit 1; }
+    [ -f out_metamdbg/out_metamdbg_corrected.fasta ] && cp out_metamdbg/out_metamdbg_corrected.fasta "$wd/intermediates/assembly/pypolca/pypolca-{sample}-metamdbg.fasta" || touch "$wd/intermediates/assembly/pypolca/pypolca-{sample}-metamdbg.fasta"
+    cd "$wd" && rm -rf .tmp/pypolca_metamdbg
+fi
+"""
+
+[rules.resources]
+threads = 4
+memory = "16G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/pypolca.yaml"
+
 # GUNZIP (label process_single; output name = input minus .gz minus last ext)
 [[rules]]
 name = "gunzip_spades"

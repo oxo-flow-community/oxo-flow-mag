@@ -84,4 +84,32 @@ rm -f .lrqc-test-tmp.oxoflow
 trap - EXIT
 echo "  LR QC chain on when long_reads + long_reads_qc are set; off by default"
 
-echo "PASS (static acceptance + BigMAG + Long-read QC branch flips)"
+echo "==> Hybrid assembly + pypolca branches"
+# Upstream HYBRID_ASSEMBLY (METASPADESHYBRID, --meta --nanopore/--pacbio;
+# skip_spadeshybrid default false upstream — the port ships it off, gated like
+# every branch) and PYPOLCA_RUN (--run_pypolca, --careful default).
+sed -e 's|^long_reads = ""$|long_reads = "test/fixtures/longreads_IL1.fastq.gz"|' \
+    -e 's|^skip_spadeshybrid = true$|skip_spadeshybrid = false|' \
+    main.oxoflow > .hybrid-test-tmp.oxoflow
+trap 'rm -f .hybrid-test-tmp.oxoflow' EXIT
+"$OXO" dry-run .hybrid-test-tmp.oxoflow --samples first:1 > /tmp/oxo-dryrun-hybrid-$$.txt 2>&1
+grep -qE "^  [0-9]+\. spades_hybrid[^ ]*  \[run" /tmp/oxo-dryrun-hybrid-$$.txt \
+    || { echo "hybrid branch: spades_hybrid not scheduled"; exit 1; }
+rm -f .hybrid-test-tmp.oxoflow
+trap - EXIT
+
+sed -e 's|^long_reads = ""$|long_reads = "test/fixtures/longreads_IL1.fastq.gz"|' \
+    -e 's|^run_pypolca = false$|run_pypolca = true|' \
+    main.oxoflow > .pypolca-test-tmp.oxoflow
+trap 'rm -f .pypolca-test-tmp.oxoflow' EXIT
+"$OXO" dry-run .pypolca-test-tmp.oxoflow --samples first:1 > /tmp/oxo-dryrun-pypolca-$$.txt 2>&1
+grep -qE "^  [0-9]+\. pypolca[^ ]*  \[run" /tmp/oxo-dryrun-pypolca-$$.txt \
+    || { echo "pypolca branch: pypolca not scheduled"; exit 1; }
+rm -f .pypolca-test-tmp.oxoflow
+trap - EXIT
+if grep -qE "^  [0-9]+\. (spades_hybrid|pypolca)[^ ]*  \[run" /tmp/oxo-dryrun-$$.txt; then
+    echo "hybrid/pypolca branch: rule scheduled with default config"; exit 1
+fi
+echo "  spades_hybrid (skip_spadeshybrid=false) + pypolca (run_pypolca=true) on when set; off by default"
+
+echo "PASS (static acceptance + BigMAG + Long-read QC + Hybrid/pypolca branch flips)"

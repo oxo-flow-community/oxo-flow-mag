@@ -379,7 +379,7 @@
     "concoct_lr_metamdbg"
   ],
   "excluded": [
-    "SPAdesHybrid / METASPADESHYBRID hybrid assembly (upstream assembly_hybrid, skip_spadeshybrid=false default) and pypolca short-read polish of long-read assemblies (workflows/mag.nf pypolca on ch_longread_assemblies) — not ported",
+    "pypolca publication path — upstream publishes the corrected assemblies under Assembly/<assembler>-pypolca/, the port keeps them in intermediates/assembly/pypolca/ (intermediate output shape)",
     "metaeuk / mmseqs (eukaryotic bin gene prediction + metaeuk_mmseqs_db database download, upstream mmseqs/databases + metaeuk/easypredict) — not ported",
     "seqtk mergepe multi-library lane merge (upstream preprocessing_shortread Run/Lane merging) — not ported; the port reads_sheet covers one stream per row (see README Multi-library lanes)"
   ],
@@ -388,7 +388,7 @@
     "diamond — taxonomic profiling with diamond; upstream 5.5.0 has no standalone diamond profiling process — the only diamond reference is an optional `diamond_table` input the CAT/BAT modules accept but the upstream workflow never supplies, so there is no user-facing diamond feature to port",
     "nf-core boilerplate files (pipeline_summary/methods_description) — not part of the analysis. Not"
   ],
-  "rule_count": 363,
+  "rule_count": 365,
   "tools": [
     "adapterremoval",
     "ale",

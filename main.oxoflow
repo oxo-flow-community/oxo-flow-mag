@@ -180,6 +180,13 @@ longreads_min_length = 1000
 longreads_keep_percent = 90
 longreads_length_weight = 10
 longreads_min_quality = ""
+# Hybrid assembly + long-read polish (upstream skip_spadeshybrid=false default
+# and run_pypolca=false): skip_spadeshybrid controls the metaSPAdes hybrid
+# short+long assembly — the port ships it OFF by default like the rest of the
+# gated branches (upstream runs it when long reads exist and the short reads
+# of the same sample are present); run_pypolca = upstream --run_pypolca.
+skip_spadeshybrid = true
+run_pypolca = false
 # Unbinned-contigs classification (upstream --cat_classify_unbinned, default
 # false): a second CAT_pack bins pass over the SPLIT_FASTA unbinned chunks of
 # every binner. Off by default — the binned-contigs column is the analysis
