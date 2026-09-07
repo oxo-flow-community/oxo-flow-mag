@@ -49,6 +49,7 @@ NanoPlot \\
     -t {threads} \\
     --fastq {config.long_reads} \\
     -o intermediates/longread_qc/NanoPlot/
+[ "$?" -eq 0 ] || { echo "NanoPlot (block 1) failed" 1>&2; exit 1; }
 """
 
 [rules.resources]
@@ -76,6 +77,7 @@ porechop \\
     -i {config.long_reads} \\
     -t {threads} \\
     -o intermediates/longread_qc/trimmed.fastq.gz
+[ "$?" -eq 0 ] || { echo "porechop failed for longreads" 1>&2; exit 1; }
 """
 
 [rules.resources]
@@ -97,6 +99,7 @@ porechop_abi \\
     -i {config.long_reads} \\
     -t {threads} \\
     -o intermediates/longread_qc/trimmed.fastq.gz
+[ "$?" -eq 0 ] || { echo "porechop_abi failed for longreads" 1>&2; exit 1; }
 """
 
 [rules.resources]
@@ -128,6 +131,7 @@ else
     LR={config.long_reads}
 fi
 gunzip -c "$LR" | NanoLyse -r assets/data/GCA_000840245.1_ViralProj14204_genomic.fna.gz | gzip > intermediates/longread_qc/nanolyse.fastq.gz
+[ "$?" -eq 0 ] || { echo "nanolyse failed for longreads" 1>&2; exit 1; }
 mv NanoLyse.log intermediates/longread_qc/nanolyse.log
 """
 
@@ -174,6 +178,7 @@ filtlong \\
     $filtlong_args \\
     "$LR" \\
     | gzip > intermediates/longread_qc/filtered.fastq.gz
+[ "$?" -eq 0 ] || { echo "filtlong failed for longreads" 1>&2; exit 1; }
 """
 
 [rules.resources]
@@ -207,6 +212,7 @@ nanoq \\
     --min-len {config.longreads_min_length} \\
     -o intermediates/longread_qc/filtered.fastq.gz \\
     -r intermediates/longread_qc/nanoq_filtered.stats
+[ "$?" -eq 0 ] || { echo "nanoq failed for longreads" 1>&2; exit 1; }
 """
 
 [rules.resources]
@@ -234,6 +240,7 @@ zcat "$LR" | chopper \\
     --threads {threads} \\
     --minlength {config.longreads_min_length} \\
     | gzip > intermediates/longread_qc/filtered.fastq.gz
+[ "$?" -eq 0 ] || { echo "chopper failed for longreads" 1>&2; exit 1; }
 """
 
 [rules.resources]
@@ -261,6 +268,7 @@ minimap2 \\
     -t {threads} \\
     -d intermediates/longread_qc/host_index/mm \\
     {config.host_fasta}
+[ "$?" -eq 0 ] || { echo "minimap2 index failed for host" 1>&2; exit 1; }
 """
 
 [rules.resources]
@@ -306,6 +314,7 @@ minimap2 \\
     "$LR" \\
     | samtools view -b -f 4 \\
     | samtools fastq --threads {threads} -0 intermediates/longread_qc/hostremoved.fastq.gz -
+[ "$?" -eq 0 ] || { echo "host removal failed for longreads" 1>&2; exit 1; }
 """
 
 [rules.resources]
@@ -347,6 +356,7 @@ NanoPlot \\
     -t {threads} \\
     --fastq "$LR" \\
     -o intermediates/longread_qc/NanoPlot/
+[ "$?" -eq 0 ] || { echo "NanoPlot (block 2) failed" 1>&2; exit 1; }
 """
 
 [rules.resources]

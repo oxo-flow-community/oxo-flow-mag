@@ -304,7 +304,7 @@ conda = "envs/megahit.yaml"
 # joined with its long reads by sample id).
 [[rules]]
 name = "spades_hybrid"
-when = "config.long_reads != '' && !config.skip_spadeshybrid && config.reads_sheet == ''"
+when = "config.long_reads != '' && !config.skip_spadeshybrid && (config.reads_sheet == '' || {meta.reads_2} != '')"
 input = [
     "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz*",
     "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz*",
@@ -387,9 +387,14 @@ mkdir -p intermediates/assembly/pypolca
 if [ -f "$wd/intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz" ]; then
     rm -rf .tmp/pypolca_flye && mkdir -p .tmp/pypolca_flye && cd .tmp/pypolca_flye
     gzip -cdf "$wd/intermediates/assembly_lr/FLYE/FLYE-longreads.assembly.fasta.gz" > contigs_uncompressed
+    # upstream read_file_arg: "-1 R1 -2 R2" paired, "-1 R1" single-end
+    if [ -f "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz" ]; then
+        READS_ARG="-1 $wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz -2 $wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz"
+    else
+        READS_ARG="-1 $wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz"
+    fi
     pypolca run -a contigs_uncompressed \\
-        -1 "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz" \\
-        -2 "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz" \\
+        $READS_ARG \\
         -t {threads} \\
         -o out_flye \\
         --prefix out_flye \\
@@ -405,9 +410,13 @@ fi
 if [ -f "$wd/intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz" ]; then
     rm -rf .tmp/pypolca_metamdbg && mkdir -p .tmp/pypolca_metamdbg && cd .tmp/pypolca_metamdbg
     gzip -cdf "$wd/intermediates/assembly_lr/METAMDBG/METAMDBG-longreads.contigs.fasta.gz" > contigs_uncompressed
+    if [ -f "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz" ]; then
+        READS_ARG="-1 $wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz -2 $wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz"
+    else
+        READS_ARG="-1 $wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz"
+    fi
     pypolca run -a contigs_uncompressed \\
-        -1 "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz" \\
-        -2 "$wd/intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_2.unmapped.fastq.gz" \\
+        $READS_ARG \\
         -t {threads} \\
         -o out_metamdbg \\
         --prefix out_metamdbg \\
