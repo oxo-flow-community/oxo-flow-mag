@@ -1,0 +1,11 @@
+# Environment for mmseqs databases download — pinned exactly to the
+# upstream nf-core/mag 5.5.0 nf-core/mmseqs/databases module environment
+# (modules/nf-core/mmseqs/databases/environment.yml); used by the
+# metaeuk_mmseqs_db preparation rule.
+name: mmseqs_databases
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - bioconda::mmseqs2=18.8cc5c
+  - conda-forge::wget=1.25.0
