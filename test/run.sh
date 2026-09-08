@@ -112,4 +112,20 @@ if grep -qE "^  [0-9]+\. (spades_hybrid|pypolca)[^ ]*  \[run" /tmp/oxo-dryrun-$$
 fi
 echo "  spades_hybrid (skip_spadeshybrid=false) + pypolca (run_pypolca=true) on when set; off by default"
 
-echo "PASS (static acceptance + BigMAG + Long-read QC + Hybrid/pypolca branch flips)"
+# MetaEuk branch: dry-run with metaeuk_mmseqs_db set (cat_db precedent: the
+# database path is the gate). Assert both per-assembler metaeuk rules schedule
+# when the db is set, and nothing metaeuk-related schedules by default.
+sed 's|^metaeuk_mmseqs_db = ""$|metaeuk_mmseqs_db = "test/fixtures/fake-mmseqs-db.tar.gz"|'     main.oxoflow > .metaeuk-test-tmp.oxoflow
+trap 'rm -f .metaeuk-test-tmp.oxoflow' EXIT
+grep -q '^metaeuk_mmseqs_db = "test/fixtures/fake-mmseqs-db.tar.gz"$' .metaeuk-test-tmp.oxoflow
+"$OXO" dry-run .metaeuk-test-tmp.oxoflow --samples first:1 > /tmp/oxo-dryrun-metaeuk-$$.txt 2>&1
+grep -qE "^  [0-9]+\. metaeuk_spades[^ ]*  \[run" /tmp/oxo-dryrun-metaeuk-$$.txt     || { echo "MetaEuk branch: metaeuk_spades not scheduled"; exit 1; }
+grep -qE "^  [0-9]+\. metaeuk_megahit[^ ]*  \[run" /tmp/oxo-dryrun-metaeuk-$$.txt     || { echo "MetaEuk branch: metaeuk_megahit not scheduled"; exit 1; }
+rm -f .metaeuk-test-tmp.oxoflow
+trap - EXIT
+if grep -qE "^  [0-9]+\. metaeuk_[^ ]*  \[run" /tmp/oxo-dryrun-$$.txt; then
+    echo "MetaEuk branch: metaeuk rule scheduled with default config"; exit 1
+fi
+echo "  metaeuk_spades/metaeuk_megahit on when metaeuk_mmseqs_db is set; off by default"
+
+echo "PASS (static acceptance + BigMAG + Long-read QC + Hybrid/pypolca + MetaEuk branch flips)"

@@ -196,6 +196,14 @@ cat_classify_unbinned = false
 # database is user-provided — genomad download-database; fails fast when empty)
 run_virus_identification = false
 genomad_db = ""
+# Eukaryotic gene prediction with MetaEuk (upstream --metaeuk_db /
+# --metaeuk_mmseqs_db): metaeuk_db is a FASTA or HH-suite database path;
+# metaeuk_mmseqs_db is an MMseqs database (archive or unpacked directory;
+# upstream downloads it via mmseqs databases — user-provided here). The
+# path is the gate (cat_db precedent); the database must exist locally
+# (fails fast when missing).
+metaeuk_db = ""
+metaeuk_mmseqs_db = ""
 # Domain classification with Tiara (upstream --bin_domain_classification / --tiara_min_length)
 bin_domain_classification = false
 tiara_min_length = 3000
@@ -260,3 +268,6 @@ path = "modules/12_longreads.oxoflow"
 
 [[include]]
 path = "modules/13_longread_qc.oxoflow"
+
+[[include]]
+path = "modules/14_metaeuk.oxoflow"

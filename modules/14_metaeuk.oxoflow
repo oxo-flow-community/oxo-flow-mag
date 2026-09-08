@@ -1,0 +1,149 @@
+[workflow]
+name = "14_metaeuk"
+description = "nf-core/mag 5.5.0 10_eukaryotic_annotation fragment"
+# ---------------------------------------------------------------------------
+# oxo-flow port of nf-core/mag 5.5.0 eukaryotic gene prediction
+# (upstream METAEUK_EASYPREDICT + MMSEQS_DATABASES). Gated on a non-empty
+# config.metaeuk_db or config.metaeuk_mmseqs_db (cat_db precedent: the
+# database path is the gate). Runs on ALL bins like the shipped PROKKA
+# rules; upstream restricts to Tiara eukarya/unclassified domains when
+# --bin_domain_classification is on — documented deviation (see README).
+# ---------------------------------------------------------------------------
+[[rules]]
+name = "metaeuk_mmseqs_db_preparation"
+when = "config.metaeuk_mmseqs_db != ''"
+input = ["{config.metaeuk_mmseqs_db}"]
+output = ["intermediates/metaeuk_db/db"]
+description = "Unpack or copy the local MMseqs database for MetaEuk (upstream MMSEQS_DATABASES fromPath)"
+shell = """
+if [ -z "{input[0]}" ]; then
+    echo "metaeuk_mmseqs_db is empty: set config.metaeuk_mmseqs_db to the local MMseqs database archive (.tar.gz) or unpacked directory" 1>&2
+    exit 1
+fi
+mkdir -p intermediates/metaeuk_db/db
+if [ -d "{input[0]}" ]; then
+    # user passed a directory instead of a tar.gz
+    cp -r "{input[0]}"/. intermediates/metaeuk_db/db/
+else
+    tar -xzf "{input[0]}" -C intermediates/metaeuk_db/db
+fi
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/mmseqs_databases.yaml"
+
+[[rules]]
+name = "metaeuk_spades"
+when = "(config.metaeuk_db != '' || config.metaeuk_mmseqs_db != '') && (config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved')"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+    "intermediates/metaeuk_db/db",
+]
+output = ["{config.out_dir}/Annotation/MetaEuk/SPAdes"]
+depends_on = ["metabat2_spades", "split_fasta_metabat2_spades", "metaeuk_mmseqs_db_preparation"]
+description = "MetaEuk easy-predict protein prediction on the SPAdes MetaBAT2 bins and chunks (upstream METAEUK_EASYPREDICT, one process per bin)"
+shell = """
+wd=/Users/wsx/Documents/GitHub/oxo-flow
+mkdir -p .tmp/metaeuk_spades_{sample} && cd .tmp/metaeuk_spades_{sample}
+mkdir -p "/{config.out_dir}/Annotation/MetaEuk/SPAdes"
+# upstream: when the database is a directory, metaeuk needs the basename
+# (the file without the .version suffix)
+DBBASE=$(find -L "/intermediates/metaeuk_db/db" -name '*.version' -exec sh -c 'file=$(basename {}); echo ${file%%.*}' \\; | head -1)
+if [ -n "$DBBASE" ]; then
+    DB="/intermediates/metaeuk_db/db/$DBBASE"
+else
+    DB="/intermediates/metaeuk_db/db/database"
+    [ -e "$DB" ] || { echo "metaeuk: no MMseqs database found under intermediates/metaeuk_db (set config.metaeuk_mmseqs_db to an MMseqs database archive or directory, or set config.metaeuk_db to a FASTA/HH-suite database path)" 1>&2; exit 1; }
+fi
+for f in ""/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.fa.gz \
+         ""/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/SPAdes-MetaBAT2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    metaeuk easy-predict "$prefix.fa" "$DB" "$prefix" tmp/ --threads {threads}
+    mv "$prefix".fas "/{config.out_dir}/Annotation/MetaEuk/SPAdes/" 2>/dev/null || true
+    mv "$prefix".codon.fas "/{config.out_dir}/Annotation/MetaEuk/SPAdes/" 2>/dev/null || true
+    mv "$prefix".headersMap.tsv "/{config.out_dir}/Annotation/MetaEuk/SPAdes/" 2>/dev/null || true
+    mv "$prefix".gff "/{config.out_dir}/Annotation/MetaEuk/SPAdes/" 2>/dev/null || true
+    rm -rf tmp "$prefix.fa"
+done
+# zero-bin groups: make the declared-output contract hold
+if [ -z "$(ls -A "/{config.out_dir}/Annotation/MetaEuk/SPAdes" 2>/dev/null)" ]; then
+    echo "metaeuk: no bins for {sample}" 1>&2
+    touch "/{config.out_dir}/Annotation/MetaEuk/SPAdes/SPAdes-MetaBAT2-{sample}.fas"
+fi
+cd ""
+rm -rf .tmp/metaeuk_spades_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "32G"
+time_limit = "16h"
+
+[rules.environment]
+conda = "envs/metaeuk.yaml"
+
+[[rules]]
+name = "metaeuk_megahit"
+when = "(config.metaeuk_db != '' || config.metaeuk_mmseqs_db != '') && (config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved')"
+input = [
+    "{config.out_dir}/GenomeBinning/MetaBAT2/bins",
+    "{config.out_dir}/GenomeBinning/MetaBAT2/unbinned",
+    "intermediates/metaeuk_db/db",
+]
+output = ["{config.out_dir}/Annotation/MetaEuk/MEGAHIT"]
+depends_on = ["metabat2_megahit", "split_fasta_metabat2_megahit", "metaeuk_mmseqs_db_preparation"]
+description = "MetaEuk easy-predict protein prediction on the MEGAHIT MetaBAT2 bins and chunks (upstream METAEUK_EASYPREDICT, one process per bin)"
+shell = """
+wd=/Users/wsx/Documents/GitHub/oxo-flow
+mkdir -p .tmp/metaeuk_megahit_{sample} && cd .tmp/metaeuk_megahit_{sample}
+mkdir -p "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT"
+DBBASE=$(find -L "/intermediates/metaeuk_db/db" -name '*.version' -exec sh -c 'file=$(basename {}); echo ${file%%.*}' \\; | head -1)
+if [ -n "$DBBASE" ]; then
+    DB="/intermediates/metaeuk_db/db/$DBBASE"
+else
+    DB="/intermediates/metaeuk_db/db/database"
+    [ -e "$DB" ] || { echo "metaeuk: no MMseqs database found under intermediates/metaeuk_db (set config.metaeuk_mmseqs_db to an MMseqs database archive or directory, or set config.metaeuk_db to a FASTA/HH-suite database path)" 1>&2; exit 1; }
+fi
+for f in ""/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*.fa.gz \
+         ""/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/MEGAHIT-MetaBAT2-{sample}*[0-9].fa.gz; do
+    [ -e "$f" ] || continue
+    prefix=$(basename "$f")
+    prefix=${prefix%.fa.gz}
+    prefix=${prefix%.fasta.gz}
+    prefix=${prefix%.fa}
+    prefix=${prefix%.fasta}
+    gunzip -c "$f" > "$prefix.fa"
+    metaeuk easy-predict "$prefix.fa" "$DB" "$prefix" tmp/ --threads {threads}
+    mv "$prefix".fas "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/" 2>/dev/null || true
+    mv "$prefix".codon.fas "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/" 2>/dev/null || true
+    mv "$prefix".headersMap.tsv "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/" 2>/dev/null || true
+    mv "$prefix".gff "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/" 2>/dev/null || true
+    rm -rf tmp "$prefix.fa"
+done
+if [ -z "$(ls -A "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT" 2>/dev/null)" ]; then
+    echo "metaeuk: no bins for {sample}" 1>&2
+    touch "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/MEGAHIT-MetaBAT2-{sample}.fas"
+fi
+cd ""
+rm -rf .tmp/metaeuk_megahit_{sample}
+"""
+
+[rules.resources]
+threads = 8
+memory = "32G"
+time_limit = "16h"
+
+[rules.environment]
+conda = "envs/metaeuk.yaml"
