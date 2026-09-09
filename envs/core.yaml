@@ -1,0 +1,10 @@
+---
+# Environment for concat_lane_mate{1,2} (upstream CAT_FASTQ — nf-core/cat_fastq
+# uses cat + pigz; the port's shell needs only cat/gzip, so this is the
+# minimal core env, modeled on envs/gunzip.yaml).
+name: core
+channels:
+  - conda-forge
+dependencies:
+  - coreutils=9.5
+  - gzip=1.13

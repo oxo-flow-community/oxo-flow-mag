@@ -6,8 +6,20 @@ description = "nf-core/mag 5.5.0 01_preprocessing fragment"
 # FASTQC_RAW -> {clip_tool: FASTP | ADAPTERREMOVAL_PE | TRIMMOMATIC} ->
 # BOWTIE2_REMOVAL_BUILD/ALIGN (--host_fasta, off by default) ->
 # BOWTIE2_PHIX_REMOVAL_BUILD -> BOWTIE2_PHIX_REMOVAL_ALIGN -> FASTQC_TRIMMED
-# -> BBMAP_BBNORM (--bbnorm, off by default). Lane merging and
-# assembly_input are not ported (off by default).
+# -> BBMAP_BBNORM (--bbnorm, off by default).
+#
+# Lane merging (upstream subworkflows/local/preprocessing_shortread) is
+# ported as a CAT_FASTQ-style concat gated on multi-lane bases: after phiX
+# removal, per-lane {base}_lane*_phix_removed files are concatenated into the
+# canonical {base}_phix_removed paths (see the concat_lane rules below).
+# Upstream runs FASTQC_TRIMMED per-lane BEFORE the merge; bbnorm runs
+# post-merge. assembly_input is not ported (off by default).
+#
+# Lane-sheet contract for merged bases: lanes need DISTINCT sheet sample ids
+# (e.g. S1_lane1, S1_lane2) because the engine's metadata parse collapses
+# duplicate sample ids last-row-wins; the merged base id (S1) must NOT be a
+# sheet sample id, and needs no metadata row ({meta.*} renders '' for it, so
+# existing meta-gated rules prune it at plan time).
 #
 # The clip-tool switch is a when-gated same-output branch (empirically
 # validated on the engine): exactly one clip rule fires per config.clip_tool
@@ -198,7 +210,7 @@ conda = "envs/fastp.yaml"
 # --interleaved_in per the upstream fastp module (ext.args injection).
 [[rules]]
 name = "fastp_single_sheet"
-when = "config.reads_sheet != '' && {meta.reads_2} == '' && config.clip_tool == 'fastp'"
+when = "config.reads_sheet != '' && {meta.reads_1} != '' && {meta.reads_2} == '' && config.clip_tool == 'fastp'"
 input = ["{meta.reads_1}"]
 output = [
     "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_1.fastp.fastq.gz",
@@ -659,7 +671,7 @@ conda = "envs/bowtie2.yaml"
 # interleaved stream (assembled with --interleaved/--12 further down).
 [[rules]]
 name = "phix_align_sheet"
-when = "config.reads_sheet != '' && {meta.reads_2} == ''"
+when = "config.reads_sheet != '' && {meta.reads_1} != '' && {meta.reads_2} == ''"
 input = [
     "intermediates/QC_shortreads/fastp/{sample}_run1_fastp_1.fastp.fastq.gz",
     "intermediates/binning/phix_index",
@@ -786,3 +798,59 @@ time_limit = "4h"
 
 [rules.environment]
 conda = "envs/fastqc.yaml"
+
+# LANE MERGE (upstream MERGE_LANES -> CAT_FASTQ, preprocessing_shortread):
+# after phiX removal, per-lane {base}_lane* phix-removed pairs are
+# concatenated into the canonical {base}_run1_phix_removed_{1,2} paths, so
+# every downstream consumer (bbnorm, spades, megahit, bowtie2_align_*)
+# keeps its existing wiring. Upstream gates the merge on >1 lanes per
+# sample (groupTuple + branch reads.size() >= 2); here the gate is purely
+# file-discovery: the input_groups pattern only matches producer outputs of
+# lane-named sheet ids (`{base}_lane*`), so concat instances instantiate
+# exactly when per-lane phix-removed files exist. Single-lane samples (ids
+# without `_lane`) never match and keep per-lane consumption, matching the
+# upstream single-lane skip.
+# One input_groups per rule (engine constraint), so mates get two rules.
+[[rules]]
+name = "concat_lane_mate1"
+when = "config.reads_sheet != ''"
+input_groups = [
+    { pattern = "intermediates/QC_shortreads/remove_phix/{base}_lane*_run1_phix_removed_1.unmapped.fastq.gz", group_by = "base" },
+]
+output = ["intermediates/QC_shortreads/remove_phix/{base}_run1_phix_removed_1.unmapped.fastq.gz"]
+description = "Concatenate per-lane phiX-removed mate-1 reads (upstream CAT_FASTQ)"
+depends_on = ["phix_align_sheet"]
+shell = """
+mkdir -p intermediates/QC_shortreads/remove_phix
+cat {input} > {output[0]}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/core.yaml"
+
+[[rules]]
+name = "concat_lane_mate2"
+when = "config.reads_sheet != ''"
+input_groups = [
+    { pattern = "intermediates/QC_shortreads/remove_phix/{base}_lane*_run1_phix_removed_2.unmapped.fastq.gz", group_by = "base" },
+]
+output = ["intermediates/QC_shortreads/remove_phix/{base}_run1_phix_removed_2.unmapped.fastq.gz"]
+description = "Concatenate per-lane phiX-removed mate-2 reads (upstream CAT_FASTQ)"
+depends_on = ["phix_align_sheet"]
+shell = """
+mkdir -p intermediates/QC_shortreads/remove_phix
+cat {input} > {output[0]}
+"""
+
+[rules.resources]
+threads = 1
+memory = "6G"
+time_limit = "4h"
+
+[rules.environment]
+conda = "envs/core.yaml"
