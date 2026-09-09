@@ -4596,13 +4596,21 @@ run_gunc() {
     done
     if ls input_files/* >/dev/null 2>&1; then
         ls input_files/* > input_files.txt
+        db="{config.gunc_db}"
+        case "$db" in /*) ;; *) db="$wd/$db" ;; esac
         gunc \\
             run \\
             --input_file input_files.txt \\
-            --db_file "$wd/{config.gunc_db}" \\
+            --db_file "$db" \\
             --threads {threads}
         # gunc names the tables after the database file; rename to the group
-        # prefix so raw/<prefix>/ holds exactly one group's tables
+        # prefix so raw/<prefix>/ holds exactly one group's tables; when no
+        # gene maps to the reference (tiny bins), gunc writes no tables at
+        # all — fall back to the zero-bin empty artifacts
+        if [ ! -e *maxCSS_level.tsv ] 2>/dev/null || ! ls *maxCSS_level.tsv >/dev/null 2>&1; then
+            echo "gunc: no genes mapped for {sample} ($2); emitting empty tables" 1>&2
+            touch "$2_maxCSS_level.tsv" "$2_all_levels.tsv"
+        fi
         mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
         mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
     else
@@ -4665,13 +4673,21 @@ run_gunc() {
     done
     if ls input_files/* >/dev/null 2>&1; then
         ls input_files/* > input_files.txt
+        db="{config.gunc_db}"
+        case "$db" in /*) ;; *) db="$wd/$db" ;; esac
         gunc \\
             run \\
             --input_file input_files.txt \\
-            --db_file "$wd/{config.gunc_db}" \\
+            --db_file "$db" \\
             --threads {threads}
         # gunc names the tables after the database file; rename to the group
-        # prefix so raw/<prefix>/ holds exactly one group's tables
+        # prefix so raw/<prefix>/ holds exactly one group's tables; when no
+        # gene maps to the reference (tiny bins), gunc writes no tables at
+        # all — fall back to the zero-bin empty artifacts
+        if [ ! -e *maxCSS_level.tsv ] 2>/dev/null || ! ls *maxCSS_level.tsv >/dev/null 2>&1; then
+            echo "gunc: no genes mapped for {sample} ($2); emitting empty tables" 1>&2
+            touch "$2_maxCSS_level.tsv" "$2_all_levels.tsv"
+        fi
         mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
         mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
     else
@@ -4734,13 +4750,21 @@ run_gunc() {
     done
     if ls input_files/* >/dev/null 2>&1; then
         ls input_files/* > input_files.txt
+        db="{config.gunc_db}"
+        case "$db" in /*) ;; *) db="$wd/$db" ;; esac
         gunc \\
             run \\
             --input_file input_files.txt \\
-            --db_file "$wd/{config.gunc_db}" \\
+            --db_file "$db" \\
             --threads {threads}
         # gunc names the tables after the database file; rename to the group
-        # prefix so raw/<prefix>/ holds exactly one group's tables
+        # prefix so raw/<prefix>/ holds exactly one group's tables; when no
+        # gene maps to the reference (tiny bins), gunc writes no tables at
+        # all — fall back to the zero-bin empty artifacts
+        if [ ! -e *maxCSS_level.tsv ] 2>/dev/null || ! ls *maxCSS_level.tsv >/dev/null 2>&1; then
+            echo "gunc: no genes mapped for {sample} ($2); emitting empty tables" 1>&2
+            touch "$2_maxCSS_level.tsv" "$2_all_levels.tsv"
+        fi
         mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
         mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
     else
@@ -4803,13 +4827,21 @@ run_gunc() {
     done
     if ls input_files/* >/dev/null 2>&1; then
         ls input_files/* > input_files.txt
+        db="{config.gunc_db}"
+        case "$db" in /*) ;; *) db="$wd/$db" ;; esac
         gunc \\
             run \\
             --input_file input_files.txt \\
-            --db_file "$wd/{config.gunc_db}" \\
+            --db_file "$db" \\
             --threads {threads}
         # gunc names the tables after the database file; rename to the group
-        # prefix so raw/<prefix>/ holds exactly one group's tables
+        # prefix so raw/<prefix>/ holds exactly one group's tables; when no
+        # gene maps to the reference (tiny bins), gunc writes no tables at
+        # all — fall back to the zero-bin empty artifacts
+        if [ ! -e *maxCSS_level.tsv ] 2>/dev/null || ! ls *maxCSS_level.tsv >/dev/null 2>&1; then
+            echo "gunc: no genes mapped for {sample} ($2); emitting empty tables" 1>&2
+            touch "$2_maxCSS_level.tsv" "$2_all_levels.tsv"
+        fi
         mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
         mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
     else
@@ -4872,13 +4904,21 @@ run_gunc() {
     done
     if ls input_files/* >/dev/null 2>&1; then
         ls input_files/* > input_files.txt
+        db="{config.gunc_db}"
+        case "$db" in /*) ;; *) db="$wd/$db" ;; esac
         gunc \\
             run \\
             --input_file input_files.txt \\
-            --db_file "$wd/{config.gunc_db}" \\
+            --db_file "$db" \\
             --threads {threads}
         # gunc names the tables after the database file; rename to the group
-        # prefix so raw/<prefix>/ holds exactly one group's tables
+        # prefix so raw/<prefix>/ holds exactly one group's tables; when no
+        # gene maps to the reference (tiny bins), gunc writes no tables at
+        # all — fall back to the zero-bin empty artifacts
+        if [ ! -e *maxCSS_level.tsv ] 2>/dev/null || ! ls *maxCSS_level.tsv >/dev/null 2>&1; then
+            echo "gunc: no genes mapped for {sample} ($2); emitting empty tables" 1>&2
+            touch "$2_maxCSS_level.tsv" "$2_all_levels.tsv"
+        fi
         mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
         mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
     else
@@ -4941,13 +4981,21 @@ run_gunc() {
     done
     if ls input_files/* >/dev/null 2>&1; then
         ls input_files/* > input_files.txt
+        db="{config.gunc_db}"
+        case "$db" in /*) ;; *) db="$wd/$db" ;; esac
         gunc \\
             run \\
             --input_file input_files.txt \\
-            --db_file "$wd/{config.gunc_db}" \\
+            --db_file "$db" \\
             --threads {threads}
         # gunc names the tables after the database file; rename to the group
-        # prefix so raw/<prefix>/ holds exactly one group's tables
+        # prefix so raw/<prefix>/ holds exactly one group's tables; when no
+        # gene maps to the reference (tiny bins), gunc writes no tables at
+        # all — fall back to the zero-bin empty artifacts
+        if [ ! -e *maxCSS_level.tsv ] 2>/dev/null || ! ls *maxCSS_level.tsv >/dev/null 2>&1; then
+            echo "gunc: no genes mapped for {sample} ($2); emitting empty tables" 1>&2
+            touch "$2_maxCSS_level.tsv" "$2_all_levels.tsv"
+        fi
         mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
         mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
     else
@@ -5010,13 +5058,21 @@ run_gunc() {
     done
     if ls input_files/* >/dev/null 2>&1; then
         ls input_files/* > input_files.txt
+        db="{config.gunc_db}"
+        case "$db" in /*) ;; *) db="$wd/$db" ;; esac
         gunc \\
             run \\
             --input_file input_files.txt \\
-            --db_file "$wd/{config.gunc_db}" \\
+            --db_file "$db" \\
             --threads {threads}
         # gunc names the tables after the database file; rename to the group
-        # prefix so raw/<prefix>/ holds exactly one group's tables
+        # prefix so raw/<prefix>/ holds exactly one group's tables; when no
+        # gene maps to the reference (tiny bins), gunc writes no tables at
+        # all — fall back to the zero-bin empty artifacts
+        if [ ! -e *maxCSS_level.tsv ] 2>/dev/null || ! ls *maxCSS_level.tsv >/dev/null 2>&1; then
+            echo "gunc: no genes mapped for {sample} ($2); emitting empty tables" 1>&2
+            touch "$2_maxCSS_level.tsv" "$2_all_levels.tsv"
+        fi
         mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
         mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
     else
@@ -5079,13 +5135,21 @@ run_gunc() {
     done
     if ls input_files/* >/dev/null 2>&1; then
         ls input_files/* > input_files.txt
+        db="{config.gunc_db}"
+        case "$db" in /*) ;; *) db="$wd/$db" ;; esac
         gunc \\
             run \\
             --input_file input_files.txt \\
-            --db_file "$wd/{config.gunc_db}" \\
+            --db_file "$db" \\
             --threads {threads}
         # gunc names the tables after the database file; rename to the group
-        # prefix so raw/<prefix>/ holds exactly one group's tables
+        # prefix so raw/<prefix>/ holds exactly one group's tables; when no
+        # gene maps to the reference (tiny bins), gunc writes no tables at
+        # all — fall back to the zero-bin empty artifacts
+        if [ ! -e *maxCSS_level.tsv ] 2>/dev/null || ! ls *maxCSS_level.tsv >/dev/null 2>&1; then
+            echo "gunc: no genes mapped for {sample} ($2); emitting empty tables" 1>&2
+            touch "$2_maxCSS_level.tsv" "$2_all_levels.tsv"
+        fi
         mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
         mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
     else
@@ -5148,13 +5212,21 @@ run_gunc() {
     done
     if ls input_files/* >/dev/null 2>&1; then
         ls input_files/* > input_files.txt
+        db="{config.gunc_db}"
+        case "$db" in /*) ;; *) db="$wd/$db" ;; esac
         gunc \\
             run \\
             --input_file input_files.txt \\
-            --db_file "$wd/{config.gunc_db}" \\
+            --db_file "$db" \\
             --threads {threads}
         # gunc names the tables after the database file; rename to the group
-        # prefix so raw/<prefix>/ holds exactly one group's tables
+        # prefix so raw/<prefix>/ holds exactly one group's tables; when no
+        # gene maps to the reference (tiny bins), gunc writes no tables at
+        # all — fall back to the zero-bin empty artifacts
+        if [ ! -e *maxCSS_level.tsv ] 2>/dev/null || ! ls *maxCSS_level.tsv >/dev/null 2>&1; then
+            echo "gunc: no genes mapped for {sample} ($2); emitting empty tables" 1>&2
+            touch "$2_maxCSS_level.tsv" "$2_all_levels.tsv"
+        fi
         mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
         mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
     else
@@ -5217,13 +5289,21 @@ run_gunc() {
     done
     if ls input_files/* >/dev/null 2>&1; then
         ls input_files/* > input_files.txt
+        db="{config.gunc_db}"
+        case "$db" in /*) ;; *) db="$wd/$db" ;; esac
         gunc \\
             run \\
             --input_file input_files.txt \\
-            --db_file "$wd/{config.gunc_db}" \\
+            --db_file "$db" \\
             --threads {threads}
         # gunc names the tables after the database file; rename to the group
-        # prefix so raw/<prefix>/ holds exactly one group's tables
+        # prefix so raw/<prefix>/ holds exactly one group's tables; when no
+        # gene maps to the reference (tiny bins), gunc writes no tables at
+        # all — fall back to the zero-bin empty artifacts
+        if [ ! -e *maxCSS_level.tsv ] 2>/dev/null || ! ls *maxCSS_level.tsv >/dev/null 2>&1; then
+            echo "gunc: no genes mapped for {sample} ($2); emitting empty tables" 1>&2
+            touch "$2_maxCSS_level.tsv" "$2_all_levels.tsv"
+        fi
         mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
         mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
     else
@@ -5286,13 +5366,21 @@ run_gunc() {
     done
     if ls input_files/* >/dev/null 2>&1; then
         ls input_files/* > input_files.txt
+        db="{config.gunc_db}"
+        case "$db" in /*) ;; *) db="$wd/$db" ;; esac
         gunc \\
             run \\
             --input_file input_files.txt \\
-            --db_file "$wd/{config.gunc_db}" \\
+            --db_file "$db" \\
             --threads {threads}
         # gunc names the tables after the database file; rename to the group
-        # prefix so raw/<prefix>/ holds exactly one group's tables
+        # prefix so raw/<prefix>/ holds exactly one group's tables; when no
+        # gene maps to the reference (tiny bins), gunc writes no tables at
+        # all — fall back to the zero-bin empty artifacts
+        if [ ! -e *maxCSS_level.tsv ] 2>/dev/null || ! ls *maxCSS_level.tsv >/dev/null 2>&1; then
+            echo "gunc: no genes mapped for {sample} ($2); emitting empty tables" 1>&2
+            touch "$2_maxCSS_level.tsv" "$2_all_levels.tsv"
+        fi
         mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
         mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
     else
@@ -5355,13 +5443,21 @@ run_gunc() {
     done
     if ls input_files/* >/dev/null 2>&1; then
         ls input_files/* > input_files.txt
+        db="{config.gunc_db}"
+        case "$db" in /*) ;; *) db="$wd/$db" ;; esac
         gunc \\
             run \\
             --input_file input_files.txt \\
-            --db_file "$wd/{config.gunc_db}" \\
+            --db_file "$db" \\
             --threads {threads}
         # gunc names the tables after the database file; rename to the group
-        # prefix so raw/<prefix>/ holds exactly one group's tables
+        # prefix so raw/<prefix>/ holds exactly one group's tables; when no
+        # gene maps to the reference (tiny bins), gunc writes no tables at
+        # all — fall back to the zero-bin empty artifacts
+        if [ ! -e *maxCSS_level.tsv ] 2>/dev/null || ! ls *maxCSS_level.tsv >/dev/null 2>&1; then
+            echo "gunc: no genes mapped for {sample} ($2); emitting empty tables" 1>&2
+            touch "$2_maxCSS_level.tsv" "$2_all_levels.tsv"
+        fi
         mv *maxCSS_level.tsv "$2_maxCSS_level.tsv"
         mv *all_levels.tsv "$2_all_levels.tsv" 2>/dev/null || touch "$2_all_levels.tsv"
     else
