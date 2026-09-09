@@ -128,4 +128,41 @@ if grep -qE "^  [0-9]+\. metaeuk_[^ ]*  \[run" /tmp/oxo-dryrun-$$.txt; then
 fi
 echo "  metaeuk_spades/metaeuk_megahit on when metaeuk_mmseqs_db is set; off by default"
 
-echo "PASS (static acceptance + BigMAG + Long-read QC + Hybrid/pypolca + MetaEuk branch flips)"
+echo "==> Lane-merge branch: dry-run with reads_sheet pointing at the multi-lane sheet"
+# Upstream MERGE_LANES (subworkflows/local/preprocessing_shortread):
+# lanes are distinct sheet rows (S1_lane1, S1_lane2); after phiX removal,
+# CAT_FASTQ concatenates them into the canonical {base}_run1_phix_removed_{
+# 1,2} paths (groupTuple + branch reads.size() >= 2). The port instantiates
+# concat_lane_mate{1,2} discovery-driven — exactly for lane-named sheet ids —
+# and assembly/binning then consume the merged base. The sheet flip also
+# needs the sample-group members (the engine treats metadata_file as a
+# lookup only). Note the merged base (S1) has NO sheet row: it gets no
+# {meta.*} values, so sheet rules prune for it; only the concat rules (which
+# bind from the discovered group key) and the paired-end defaults run for it.
+sed -e 's|^reads_sheet = ""$|reads_sheet = "test/fixtures/reads_sheet.tsv"|' \
+    -e 's|^samples = \["S1", "S2", "SE1", "IL1"\]$|samples = ["S1", "S2", "SE1", "IL1", "S1_lane1", "S1_lane2"]|' \
+    main.oxoflow > .lane-merge-test-tmp.oxoflow
+grep -q '^reads_sheet = "test/fixtures/reads_sheet.tsv"$' .lane-merge-test-tmp.oxoflow
+grep -q '^samples = \["S1", "S2", "SE1", "IL1", "S1_lane1", "S1_lane2"\]$' .lane-merge-test-tmp.oxoflow
+trap 'rm -f .lane-merge-test-tmp.oxoflow' EXIT
+"$OXO" dry-run .lane-merge-test-tmp.oxoflow --samples S1,S2,SE1,IL1,S1_lane1,S1_lane2 > /tmp/oxo-dryrun-lanemerge-$$.txt 2>&1
+grep -qE "^  [0-9]+\. concat_lane_mate1_S1  \[run" /tmp/oxo-dryrun-lanemerge-$$.txt \
+    || { echo "Lane merge: concat_lane_mate1_S1 not scheduled"; exit 1; }
+grep -qE "^  [0-9]+\. concat_lane_mate2_S1  \[run" /tmp/oxo-dryrun-lanemerge-$$.txt \
+    || { echo "Lane merge: concat_lane_mate2_S1 not scheduled"; exit 1; }
+# merged-base assertions: S1 has NO sheet row (its lanes do), so {meta.*}
+# renders '' and the `|| {meta.reads_1} == ''` disjunct schedules the merged
+# base on the concatenated canonical paths. Bare rule names (trailing space)
+# keep per-lane instances from satisfying the match.
+grep -qE "^  [0-9]+\. spades_cohort_S1  \[run" /tmp/oxo-dryrun-lanemerge-$$.txt \
+    || { echo "Lane merge: merged-base assembly (spades_cohort_S1) not scheduled"; exit 1; }
+grep -qE "^  [0-9]+\. bowtie2_align_megahit_sheet_cohort_S1  \[run" /tmp/oxo-dryrun-lanemerge-$$.txt \
+    || { echo "Lane merge: merged-base align (bowtie2_align_megahit_sheet_cohort_S1) not scheduled"; exit 1; }
+if grep -qE "^  [0-9]+\. concat_lane_mate[12]_[^ ]*  \[run" /tmp/oxo-dryrun-$$.txt; then
+    echo "Lane merge: concat_lane_mate scheduled with default config"; exit 1
+fi
+rm -f .lane-merge-test-tmp.oxoflow
+trap - EXIT
+echo "  concat_lane_mate{1,2} instantiate for lane-named sheet ids; off by default"
+
+echo "PASS (static acceptance + BigMAG + Long-read QC + Hybrid/pypolca + MetaEuk + Lane-merge branch flips)"

@@ -65,6 +65,22 @@ out_dir = "results"
 #   SE1     test/fixtures/raw/S1_R1.fastq.gz                                 single
 #   IL1     test/fixtures/interleaved_IL1.fastq.gz                           interleaved
 reads_sheet = ""
+# Multi-lane merging (upstream --merge_lanes, CAT_FASTQ): lanes of one sample
+# are DISTINCT sheet rows with distinct sample ids (e.g. S1_lane1, S1_lane2 —
+# the engine collapses duplicate sheet ids last-row-wins) whose layout is pe.
+# After phiX removal, concat_lane_mate{1,2} (modules/01_preprocessing.oxoflow)
+# concatenates the {base}_lane* phix-removed pairs into the canonical
+# {base}_run1_phix_removed_{1,2} paths, so assembly/binning consume the merged
+# sample. Instantiation is discovery-driven: the concat rules' input_groups
+# pattern matches `{base}_lane*_run1_phix_removed_{1,2}` producer outputs, so
+# instances appear exactly for the lane ids present in the sheet (a lane id is
+# anything whose phix-removed outputs exist and whose name carries `_lane`).
+# Single-lane samples (ids without `_lane`) never match and are consumed
+# per-lane as before (upstream: single-lane samples skip the merge).
+# The merged base id (e.g. S1) is NOT a sheet sample id and needs no metadata
+# row ({meta.*} gates render '' for it), and is NOT added to cohort_samples:
+# upstream merges lanes before binning prep, and the align loop reads the
+# merged paths via the canonical names.
 # phiX reference (upstream --phix_reference default =
 # projectDir/assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz)
 phix_reference = "assets/data/GCA_002596845.1_ASM259684v1_genomic.fna.gz"

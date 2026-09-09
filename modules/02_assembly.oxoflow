@@ -15,7 +15,7 @@ description = "nf-core/mag 5.5.0 02_assembly fragment"
 # so the rule runs in a scratch dir and moves the named outputs out.
 [[rules]]
 name = "spades"
-when = "config.reads_sheet == '' || {meta.reads_2} != ''"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_1} == ''"
 input = [
     # Both read variants are optional globs: the shell prefers bbnorm when
     # --bbnorm is on, else the phiX-removed reads — the inactive variant
@@ -31,7 +31,10 @@ output = [
 ]
 description = "Metagenomic assembly with SPAdes (upstream SPADES; consumes the bbnorm-normalized reads when --bbnorm is on)"
 # phix_align: explicit edge for the globbed remove_phix inputs.
-depends_on = ["phix_align", "bbnorm"]
+# concat_lane_*: explicit edges for the merged-base canonical paths (the
+# globs match them, but edges are exact-string, so the concat producers are
+# named to keep the ordering guarantee).
+depends_on = ["phix_align", "bbnorm", "concat_lane_mate1", "concat_lane_mate2"]
 shell = """
 wd=$(pwd)
 mkdir -p intermediates/assembly/SPAdes {config.out_dir}/Assembly/SPAdes
@@ -139,7 +142,7 @@ conda = "envs/spades.yaml"
 # MEGAHIT (label process_high + 8 cpu/40GB/16h override, prefix MEGAHIT-{id})
 [[rules]]
 name = "megahit"
-when = "config.reads_sheet == '' || {meta.reads_2} != ''"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_1} == ''"
 input = [
     # Both read variants are optional globs (see spades).
     "intermediates/QC_shortreads/remove_phix/{sample}_run1_phix_removed_1.unmapped.fastq.gz*",
@@ -153,7 +156,8 @@ output = [
 ]
 description = "Metagenomic assembly with MEGAHIT (upstream MEGAHIT; consumes the bbnorm-normalized reads when --bbnorm is on)"
 # phix_align: explicit edge for the globbed remove_phix inputs.
-depends_on = ["phix_align", "bbnorm"]
+# concat_lane_*: explicit edges for the merged-base canonical paths.
+depends_on = ["phix_align", "bbnorm", "concat_lane_mate1", "concat_lane_mate2"]
 shell = """
 wd=$(pwd)
 mkdir -p intermediates/assembly/MEGAHIT {config.out_dir}/Assembly/MEGAHIT
@@ -452,7 +456,7 @@ conda = "envs/pypolca.yaml"
 # GUNZIP (label process_single; output name = input minus .gz minus last ext)
 [[rules]]
 name = "gunzip_spades"
-when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved' || {meta.reads_1} == ''"
 input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa.gz"]
 output = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
 description = "Decompress the SPAdes assembly (upstream GUNZIP on SPAdes output)"
@@ -492,7 +496,7 @@ conda = "envs/gunzip.yaml"
 # pattern), with report_rawassemblies.tsv additionally kept in intermediates.
 [[rules]]
 name = "quast_spades"
-when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved' || {meta.reads_1} == ''"
 input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
 output = [
     "intermediates/assembly/quast/SPAdes-{sample}.report_rawassemblies.tsv",
@@ -588,7 +592,7 @@ conda = "envs/quast.yaml"
 # PRODIGAL (label process_single + 4GB override, prefix {assembler}-{id}_prodigal)
 [[rules]]
 name = "prodigal_spades"
-when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved' || {meta.reads_1} == ''"
 input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
 output = [
     "{config.out_dir}/Annotation/Prodigal/SPAdes/{sample}/SPAdes-{sample}_prodigal.fna.gz",

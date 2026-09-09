@@ -15,7 +15,7 @@ description = "nf-core/mag 5.5.0 03_binning_prep fragment"
 # in intermediates; upstream keeps the index files in each task's workdir.
 [[rules]]
 name = "bowtie2_build_spades"
-when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved'"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved' || {meta.reads_1} == ''"
 input = ["intermediates/assembly/SPAdes/SPAdes-{sample}.scaffolds.fa"]
 output = [
     "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.1.bt2",
@@ -38,6 +38,7 @@ conda = "envs/bowtie2.yaml"
 
 [[rules]]
 name = "bowtie2_build_megahit"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved' || {meta.reads_1} == ''"
 input = ["intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa"]
 output = [
     "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.1.bt2",
@@ -208,7 +209,7 @@ conda = "envs/bowtie2_samtools.yaml"
 # Default mode: pruned at plan time (default plan byte-identical).
 [[rules]]
 name = "bowtie2_align_spades_sheet"
-when = "config.reads_sheet != '' && ({meta.reads_2} != '' || {meta.reads_layout} == 'interleaved')"
+when = "config.reads_sheet != '' && ({meta.reads_2} != '' || {meta.reads_layout} == 'interleaved' || {meta.reads_1} == '')"
 input = [
     "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.1.bt2",
     "intermediates/binning/assembly_index/SPAdes/SPAdes-{sample}.rev.1.bt2",
@@ -273,10 +274,12 @@ conda = "envs/bowtie2_samtools.yaml"
 # concordant -1/-2 pair; single-end and interleaved rows map their single
 # stream with -U (upstream BOWTIE2_ASSEMBLY_ALIGN single-end branch - bowtie2
 # has no interleaved pair flag, so interleaved input is mapped per read).
+# The `{meta.reads_1} == ''` disjunct schedules merged lane bases (no sheet
+# row, concatenated canonical paths — same disjunct as spades_sheet).
 # Default mode: pruned at plan time (default plan byte-identical).
 [[rules]]
 name = "bowtie2_align_megahit_sheet"
-when = "config.reads_sheet != '' && {meta.reads_1} != ''"
+when = "config.reads_sheet != '' && ({meta.reads_2} != '' || {meta.reads_layout} == 'interleaved' || {meta.reads_1} == '')"
 input = [
     "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.1.bt2",
     "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.rev.1.bt2",

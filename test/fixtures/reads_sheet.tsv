@@ -1,5 +1,6 @@
 sample	reads_1	reads_2	reads_layout
-S1	test/fixtures/raw/S1_R1.fastq.gz	test/fixtures/raw/S1_R2.fastq.gz	pe
-S2	test/fixtures/raw/S2_R1.fastq.gz	test/fixtures/raw/S2_R2.fastq.gz	pe
-SE1	test/fixtures/raw/S1_R1.fastq.gz		single
-IL1	test/fixtures/interleaved_IL1.fastq.gz		interleaved
+S2	/Users/wsx/Documents/GitHub/oxo-flow-mag/test/fixtures/raw/S2_R1.fastq.gz	/Users/wsx/Documents/GitHub/oxo-flow-mag/test/fixtures/raw/S2_R2.fastq.gz	pe
+SE1	/Users/wsx/Documents/GitHub/oxo-flow-mag/test/fixtures/raw/S1_R1.fastq.gz		single
+IL1	/Users/wsx/Documents/GitHub/oxo-flow-mag/test/fixtures/interleaved_IL1.fastq.gz		interleaved
+S1_lane1	/Users/wsx/Documents/GitHub/oxo-flow-mag/test/fixtures/S1_lane1_R1.fastq.gz	/Users/wsx/Documents/GitHub/oxo-flow-mag/test/fixtures/S1_lane1_R2.fastq.gz	pe
+S1_lane2	/Users/wsx/Documents/GitHub/oxo-flow-mag/test/fixtures/S1_lane2_R1.fastq.gz	/Users/wsx/Documents/GitHub/oxo-flow-mag/test/fixtures/S1_lane2_R2.fastq.gz	pe
