@@ -38,7 +38,7 @@ conda = "envs/bowtie2.yaml"
 
 [[rules]]
 name = "bowtie2_build_megahit"
-when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved' || {meta.reads_1} == ''"
+when = "config.reads_sheet == '' || {meta.reads_2} != '' || {meta.reads_layout} == 'interleaved' || {meta.reads_layout} == 'single' || {meta.reads_1} == ''"
 input = ["intermediates/assembly/MEGAHIT/MEGAHIT-{sample}.contigs.fa"]
 output = [
     "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.1.bt2",
@@ -279,7 +279,7 @@ conda = "envs/bowtie2_samtools.yaml"
 # Default mode: pruned at plan time (default plan byte-identical).
 [[rules]]
 name = "bowtie2_align_megahit_sheet"
-when = "config.reads_sheet != '' && ({meta.reads_2} != '' || {meta.reads_layout} == 'interleaved' || {meta.reads_1} == '')"
+when = "config.reads_sheet != '' && ({meta.reads_2} != '' || {meta.reads_layout} == 'interleaved' || {meta.reads_layout} == 'single' || {meta.reads_1} == '')"
 input = [
     "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.1.bt2",
     "intermediates/binning/assembly_index/MEGAHIT/MEGAHIT-{sample}.rev.1.bt2",

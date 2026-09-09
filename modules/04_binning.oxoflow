@@ -1888,7 +1888,7 @@ conda = "envs/mag_depths.yaml"
 # in the shell (sorted, deterministic). Default mode: pruned at plan time.
 [[rules]]
 name = "depths_megahit_sheet"
-when = "config.reads_sheet != '' && {meta.reads_1} != ''"
+when = "config.reads_sheet != '' && ({meta.reads_2} != '' || {meta.reads_layout} == 'interleaved' || {meta.reads_layout} == 'single' || {meta.reads_1} == '')"
 input = ["intermediates/binning/alignments/MEGAHIT"]
 output = [
     "intermediates/binning/depths/MEGAHIT-{sample}-depth.txt.gz",
