@@ -79,8 +79,9 @@ genomad \\
     --cleanup \\
     --min-score 0.7 \\
     --splits 1
-gzip ./**/*.fna
-gzip ./**/*.faa
+gzip -f ./*.fna ./*.faa 2>/dev/null || true
+# geNomad 1.11 writes all final results into *_summary/ already gzipped;
+# *.log files stay uncompressed at the outdir root (do not try to gzip them).
 # upstream publishes the whole per-sample dir (everything but versions.yml)
 mv SPAdes-{sample}.scaffolds_* "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/" 2>/dev/null || {
     # degenerate empty results: make the declared-output contract hold
@@ -139,8 +140,9 @@ genomad \\
     --cleanup \\
     --min-score 0.7 \\
     --splits 1
-gzip ./**/*.fna
-gzip ./**/*.faa
+gzip -f ./*.fna ./*.faa 2>/dev/null || true
+# geNomad 1.11 writes all final results into *_summary/ already gzipped;
+# *.log files stay uncompressed at the outdir root (do not try to gzip them).
 # upstream publishes the whole per-sample dir (everything but versions.yml)
 mv MEGAHIT-{sample}.contigs_* "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/" 2>/dev/null || {
     # degenerate empty results: make the declared-output contract hold
