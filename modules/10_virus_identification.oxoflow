@@ -50,9 +50,9 @@ input = [
     "intermediates/genomad_db/db",
 ]
 output = [
-    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus_summary.tsv",
-    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus.fna.gz",
-    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus_proteins.faa.gz",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary/SPAdes-{sample}.scaffolds_virus_summary.tsv",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary/SPAdes-{sample}.scaffolds_virus.fna.gz",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary/SPAdes-{sample}.scaffolds_virus_proteins.faa.gz",
 ]
 depends_on = ["gunzip_spades", "genomad_db_preparation"]
 description = "geNomad end-to-end virus identification of the SPAdes assembly (upstream GENOMAD_ENDTOEND)"
@@ -111,9 +111,9 @@ input = [
     "intermediates/genomad_db/db",
 ]
 output = [
-    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus_summary.tsv",
-    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus.fna.gz",
-    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus_proteins.faa.gz",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary/MEGAHIT-{sample}.contigs_virus_summary.tsv",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary/MEGAHIT-{sample}.contigs_virus.fna.gz",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary/MEGAHIT-{sample}.contigs_virus_proteins.faa.gz",
 ]
 depends_on = ["gunzip_megahit", "genomad_db_preparation"]
 description = "geNomad end-to-end virus identification of the MEGAHIT assembly (upstream GENOMAD_ENDTOEND)"
