@@ -87,9 +87,9 @@ mv SPAdes-{sample}.scaffolds_* "$wd/{config.out_dir}/VirusIdentification/geNomad
     # degenerate empty results: make the declared-output contract hold
     echo "genomad: no results for {sample}" 1>&2
     mkdir -p "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary"
-    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus_summary.tsv"
-    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus.fna.gz"
-    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus_proteins.faa.gz"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary/SPAdes-{sample}.scaffolds_virus_summary.tsv"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary/SPAdes-{sample}.scaffolds_virus.fna.gz"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary/SPAdes-{sample}.scaffolds_virus_proteins.faa.gz"
 }
 cd "$wd"
 rm -rf .tmp/genomad_spades_{sample}
@@ -148,9 +148,9 @@ mv MEGAHIT-{sample}.contigs_* "$wd/{config.out_dir}/VirusIdentification/geNomad/
     # degenerate empty results: make the declared-output contract hold
     echo "genomad: no results for {sample}" 1>&2
     mkdir -p "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary"
-    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus_summary.tsv"
-    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus.fna.gz"
-    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus_proteins.faa.gz"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary/MEGAHIT-{sample}.contigs_virus_summary.tsv"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary/MEGAHIT-{sample}.contigs_virus.fna.gz"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary/MEGAHIT-{sample}.contigs_virus_proteins.faa.gz"
 }
 cd "$wd"
 rm -rf .tmp/genomad_megahit_{sample}
