@@ -50,9 +50,9 @@ input = [
     "intermediates/genomad_db/db",
 ]
 output = [
-    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus_summary.tsv",
-    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus.fna.gz",
-    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus_proteins.faa.gz",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary/SPAdes-{sample}.scaffolds_virus_summary.tsv",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary/SPAdes-{sample}.scaffolds_virus.fna.gz",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary/SPAdes-{sample}.scaffolds_virus_proteins.faa.gz",
 ]
 depends_on = ["gunzip_spades", "genomad_db_preparation"]
 description = "geNomad end-to-end virus identification of the SPAdes assembly (upstream GENOMAD_ENDTOEND)"
@@ -79,16 +79,17 @@ genomad \\
     --cleanup \\
     --min-score 0.7 \\
     --splits 1
-gzip ./**/*.fna
-gzip ./**/*.faa
+gzip -f ./*.fna ./*.faa 2>/dev/null || true
+# geNomad 1.11 writes all final results into *_summary/ already gzipped;
+# *.log files stay uncompressed at the outdir root (do not try to gzip them).
 # upstream publishes the whole per-sample dir (everything but versions.yml)
 mv SPAdes-{sample}.scaffolds_* "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/" 2>/dev/null || {
     # degenerate empty results: make the declared-output contract hold
     echo "genomad: no results for {sample}" 1>&2
     mkdir -p "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary"
-    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus_summary.tsv"
-    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus.fna.gz"
-    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_virus_proteins.faa.gz"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary/SPAdes-{sample}.scaffolds_virus_summary.tsv"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary/SPAdes-{sample}.scaffolds_virus.fna.gz"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/SPAdes-{sample}.scaffolds_summary/SPAdes-{sample}.scaffolds_virus_proteins.faa.gz"
 }
 cd "$wd"
 rm -rf .tmp/genomad_spades_{sample}
@@ -110,9 +111,9 @@ input = [
     "intermediates/genomad_db/db",
 ]
 output = [
-    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus_summary.tsv",
-    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus.fna.gz",
-    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus_proteins.faa.gz",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary/MEGAHIT-{sample}.contigs_virus_summary.tsv",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary/MEGAHIT-{sample}.contigs_virus.fna.gz",
+    "{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary/MEGAHIT-{sample}.contigs_virus_proteins.faa.gz",
 ]
 depends_on = ["gunzip_megahit", "genomad_db_preparation"]
 description = "geNomad end-to-end virus identification of the MEGAHIT assembly (upstream GENOMAD_ENDTOEND)"
@@ -139,16 +140,17 @@ genomad \\
     --cleanup \\
     --min-score 0.7 \\
     --splits 1
-gzip ./**/*.fna
-gzip ./**/*.faa
+gzip -f ./*.fna ./*.faa 2>/dev/null || true
+# geNomad 1.11 writes all final results into *_summary/ already gzipped;
+# *.log files stay uncompressed at the outdir root (do not try to gzip them).
 # upstream publishes the whole per-sample dir (everything but versions.yml)
 mv MEGAHIT-{sample}.contigs_* "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/" 2>/dev/null || {
     # degenerate empty results: make the declared-output contract hold
     echo "genomad: no results for {sample}" 1>&2
     mkdir -p "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary"
-    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus_summary.tsv"
-    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus.fna.gz"
-    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_virus_proteins.faa.gz"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary/MEGAHIT-{sample}.contigs_virus_summary.tsv"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary/MEGAHIT-{sample}.contigs_virus.fna.gz"
+    touch "$wd/{config.out_dir}/VirusIdentification/geNomad/{sample}/MEGAHIT-{sample}.contigs_summary/MEGAHIT-{sample}.contigs_virus_proteins.faa.gz"
 }
 cd "$wd"
 rm -rf .tmp/genomad_megahit_{sample}
