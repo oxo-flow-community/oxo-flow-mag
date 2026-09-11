@@ -242,17 +242,17 @@ The acceptance test needs only `oxo-flow` (v0.17.0+) on `PATH` (override with `O
 
 The remaining when-gated branches are statically verified: `validate` + `lint` + `dry-run` confirm each gate activates exactly its own branch with the default plan unchanged (see the gated-branches table). Runtime behavior of the underlying tools is unchanged from upstream nf-core/mag.
 
-**Live queue** — the four branches ported in the catalog truthification wave (2026-08-27) are not yet live-verified; they need real databases and are queued for the box-queue live-testing campaign:
+**Live queue** — the branches ported in the catalog truthification wave (2026-08-27) needed real databases for live verification; results after the box-queue live-testing campaign (2026-09, bioinfo-wsx):
 
 | Toggle | Needs | Status |
 |---|---|---|
 | `run_checkm2=true` + `checkm2_db` | CheckM2 database v4 (`checkm2 database --download`, ~10 GB .dmnd) | ✅ live-verified (md5-checked download; see the PASS row above) |
-| `run_gunc=true` + `gunc_db` | GUNC reference database (`gunc download_db`, ~21 GB) | queued — `gunc run` + `merge_checkm` merged output |
-| `cat_db=...` | CAT-nr database (CAT_pack download + prepare, ~35 GB) | queued — `CAT_pack bins`/`add_names`/`summarise` + `bat_summary.tsv` |
-| `run_virus_identification=true` + `genomad_db` | geNomad database (`genomad download-database`, ~10 GB) | queued — `genomad end-to-end` on a real assembly |
+| `run_gunc=true` + `gunc_db` | GUNC reference database (`gunc download_db`, ~21 GB) | ✅ live-verified — `gunc run` + `merge_checkm` on the cluster fixtures (issue #11) |
+| `cat_db=...` | CAT-nr database (CAT_pack download + prepare, ~35 GB) | ✅ live-verified — 92G GTDB CAT pack, `Done: 8 succeeded, 20 skipped, 0 failed`, zero-bin contract confirmed (issue #12) |
+| `run_virus_identification=true` + `genomad_db` | geNomad database (`genomad download-database`, ~10 GB) | ✅ live-verified — real 25G db, `Done: 1 succeeded, 9 skipped, 0 failed`, NODE_12 (5055bp, DTR, score 0.7756) identified; `_summary/` nested outputs (issue #13, PR #33) |
 | `metaeuk_mmseqs_db=...` | MMseqs protein database (e.g. the UniRef90 build for MetaEuk; archive or directory) | queued — `metaeuk easy-predict` on real bins |
 
-Until then these branches are statically verified only (validate + lint + dry-run per gate).
+Until then the MetaEuk branch is statically verified only (validate + lint + dry-run per gate).
 
 ## License
 
