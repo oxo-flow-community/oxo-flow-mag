@@ -49,20 +49,20 @@ output = ["{config.out_dir}/Annotation/MetaEuk/SPAdes"]
 depends_on = ["metabat2_spades", "split_fasta_metabat2_spades", "metaeuk_mmseqs_db_preparation"]
 description = "MetaEuk easy-predict protein prediction on the SPAdes MetaBAT2 bins and chunks (upstream METAEUK_EASYPREDICT, one process per bin)"
 shell = """
-wd=/Users/wsx/Documents/GitHub/oxo-flow
-mkdir -p .tmp/metaeuk_spades_{sample} && cd .tmp/metaeuk_spades_{sample}
-mkdir -p "/{config.out_dir}/Annotation/MetaEuk/SPAdes"
+wd=$(pwd)
+mkdir -p {config.out_dir}/Annotation/MetaEuk/SPAdes
 # upstream: when the database is a directory, metaeuk needs the basename
 # (the file without the .version suffix)
-DBBASE=$(find -L "/intermediates/metaeuk_db/db" -name '*.version' -exec sh -c 'file=$(basename {}); echo ${file%%.*}' \\; | head -1)
+DBBASE=$(find -L intermediates/metaeuk_db/db -name '*.version' -exec sh -c 'file=$(basename {}); echo ${file%%.*}' \\; | head -1)
 if [ -n "$DBBASE" ]; then
-    DB="/intermediates/metaeuk_db/db/$DBBASE"
+    DB="intermediates/metaeuk_db/db/$DBBASE"
 else
-    DB="/intermediates/metaeuk_db/db/database"
+    DB="intermediates/metaeuk_db/db/database"
     [ -e "$DB" ] || { echo "metaeuk: no MMseqs database found under intermediates/metaeuk_db (set config.metaeuk_mmseqs_db to an MMseqs database archive or directory, or set config.metaeuk_db to a FASTA/HH-suite database path)" 1>&2; exit 1; }
 fi
-for f in ""/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.fa.gz \
-         ""/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/SPAdes-MetaBAT2-{sample}*[0-9].fa.gz; do
+mkdir -p .tmp/metaeuk_spades_{sample} && cd .tmp/metaeuk_spades_{sample}
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/SPAdes-MetaBAT2-{sample}*[0-9].fa.gz; do
     [ -e "$f" ] || continue
     prefix=$(basename "$f")
     prefix=${prefix%.fa.gz}
@@ -70,19 +70,19 @@ for f in ""/{config.out_dir}/GenomeBinning/MetaBAT2/bins/SPAdes-MetaBAT2-{sample
     prefix=${prefix%.fa}
     prefix=${prefix%.fasta}
     gunzip -c "$f" > "$prefix.fa"
-    metaeuk easy-predict "$prefix.fa" "$DB" "$prefix" tmp/ --threads {threads}
-    mv "$prefix".fas "/{config.out_dir}/Annotation/MetaEuk/SPAdes/" 2>/dev/null || true
-    mv "$prefix".codon.fas "/{config.out_dir}/Annotation/MetaEuk/SPAdes/" 2>/dev/null || true
-    mv "$prefix".headersMap.tsv "/{config.out_dir}/Annotation/MetaEuk/SPAdes/" 2>/dev/null || true
-    mv "$prefix".gff "/{config.out_dir}/Annotation/MetaEuk/SPAdes/" 2>/dev/null || true
+    metaeuk easy-predict "$prefix.fa" "$wd/$DB" "$prefix" tmp/ --threads {threads}
+    mv "$prefix".fas "$wd/{config.out_dir}/Annotation/MetaEuk/SPAdes/" 2>/dev/null || true
+    mv "$prefix".codon.fas "$wd/{config.out_dir}/Annotation/MetaEuk/SPAdes/" 2>/dev/null || true
+    mv "$prefix".headersMap.tsv "$wd/{config.out_dir}/Annotation/MetaEuk/SPAdes/" 2>/dev/null || true
+    mv "$prefix".gff "$wd/{config.out_dir}/Annotation/MetaEuk/SPAdes/" 2>/dev/null || true
     rm -rf tmp "$prefix.fa"
 done
 # zero-bin groups: make the declared-output contract hold
-if [ -z "$(ls -A "/{config.out_dir}/Annotation/MetaEuk/SPAdes" 2>/dev/null)" ]; then
+if [ -z "$(ls -A "$wd/{config.out_dir}/Annotation/MetaEuk/SPAdes" 2>/dev/null)" ]; then
     echo "metaeuk: no bins for {sample}" 1>&2
-    touch "/{config.out_dir}/Annotation/MetaEuk/SPAdes/SPAdes-MetaBAT2-{sample}.fas"
+    touch "$wd/{config.out_dir}/Annotation/MetaEuk/SPAdes/SPAdes-MetaBAT2-{sample}.fas"
 fi
-cd ""
+cd "$wd"
 rm -rf .tmp/metaeuk_spades_{sample}
 """
 
@@ -106,18 +106,18 @@ output = ["{config.out_dir}/Annotation/MetaEuk/MEGAHIT"]
 depends_on = ["metabat2_megahit", "split_fasta_metabat2_megahit", "metaeuk_mmseqs_db_preparation"]
 description = "MetaEuk easy-predict protein prediction on the MEGAHIT MetaBAT2 bins and chunks (upstream METAEUK_EASYPREDICT, one process per bin)"
 shell = """
-wd=/Users/wsx/Documents/GitHub/oxo-flow
-mkdir -p .tmp/metaeuk_megahit_{sample} && cd .tmp/metaeuk_megahit_{sample}
-mkdir -p "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT"
-DBBASE=$(find -L "/intermediates/metaeuk_db/db" -name '*.version' -exec sh -c 'file=$(basename {}); echo ${file%%.*}' \\; | head -1)
+wd=$(pwd)
+mkdir -p {config.out_dir}/Annotation/MetaEuk/MEGAHIT
+DBBASE=$(find -L intermediates/metaeuk_db/db -name '*.version' -exec sh -c 'file=$(basename {}); echo ${file%%.*}' \\; | head -1)
 if [ -n "$DBBASE" ]; then
-    DB="/intermediates/metaeuk_db/db/$DBBASE"
+    DB="intermediates/metaeuk_db/db/$DBBASE"
 else
-    DB="/intermediates/metaeuk_db/db/database"
+    DB="intermediates/metaeuk_db/db/database"
     [ -e "$DB" ] || { echo "metaeuk: no MMseqs database found under intermediates/metaeuk_db (set config.metaeuk_mmseqs_db to an MMseqs database archive or directory, or set config.metaeuk_db to a FASTA/HH-suite database path)" 1>&2; exit 1; }
 fi
-for f in ""/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*.fa.gz \
-         ""/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/MEGAHIT-MetaBAT2-{sample}*[0-9].fa.gz; do
+mkdir -p .tmp/metaeuk_megahit_{sample} && cd .tmp/metaeuk_megahit_{sample}
+for f in "$wd"/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sample}*.fa.gz \
+         "$wd"/{config.out_dir}/GenomeBinning/MetaBAT2/unbinned/MEGAHIT-MetaBAT2-{sample}*[0-9].fa.gz; do
     [ -e "$f" ] || continue
     prefix=$(basename "$f")
     prefix=${prefix%.fa.gz}
@@ -125,18 +125,19 @@ for f in ""/{config.out_dir}/GenomeBinning/MetaBAT2/bins/MEGAHIT-MetaBAT2-{sampl
     prefix=${prefix%.fa}
     prefix=${prefix%.fasta}
     gunzip -c "$f" > "$prefix.fa"
-    metaeuk easy-predict "$prefix.fa" "$DB" "$prefix" tmp/ --threads {threads}
-    mv "$prefix".fas "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/" 2>/dev/null || true
-    mv "$prefix".codon.fas "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/" 2>/dev/null || true
-    mv "$prefix".headersMap.tsv "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/" 2>/dev/null || true
-    mv "$prefix".gff "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/" 2>/dev/null || true
+    metaeuk easy-predict "$prefix.fa" "$wd/$DB" "$prefix" tmp/ --threads {threads}
+    mv "$prefix".fas "$wd/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/" 2>/dev/null || true
+    mv "$prefix".codon.fas "$wd/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/" 2>/dev/null || true
+    mv "$prefix".headersMap.tsv "$wd/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/" 2>/dev/null || true
+    mv "$prefix".gff "$wd/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/" 2>/dev/null || true
     rm -rf tmp "$prefix.fa"
 done
-if [ -z "$(ls -A "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT" 2>/dev/null)" ]; then
+# zero-bin groups: make the declared-output contract hold
+if [ -z "$(ls -A "$wd/{config.out_dir}/Annotation/MetaEuk/MEGAHIT" 2>/dev/null)" ]; then
     echo "metaeuk: no bins for {sample}" 1>&2
-    touch "/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/MEGAHIT-MetaBAT2-{sample}.fas"
+    touch "$wd/{config.out_dir}/Annotation/MetaEuk/MEGAHIT/MEGAHIT-MetaBAT2-{sample}.fas"
 fi
-cd ""
+cd "$wd"
 rm -rf .tmp/metaeuk_megahit_{sample}
 """
 
