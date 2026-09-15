@@ -1779,7 +1779,11 @@ input = [
     "{config.out_dir}/Annotation",
     "{config.out_dir}/Taxonomy",
 ]
-output = ["{config.out_dir}/multiqc/multiqc_report.html"]
+output = [
+    "{config.out_dir}/multiqc/multiqc_report.html",
+    "{config.out_dir}/multiqc/multiqc_data/",
+    "{config.out_dir}/multiqc/multiqc_plots/",
+]
 depends_on = [
     "fastqc_raw",
     "fastp",
@@ -1923,7 +1927,11 @@ for d in {input[0]} {input[1]} {input[2]} {input[3]} {input[4]}; do
     [ -d "$d" ] && dirs="$dirs $d"
 done
 multiqc --config assets/multiqc_config.yml --force $dirs
+# re-run safe: clear dirs a previous attempt left behind before mv
+rm -rf {config.out_dir}/multiqc/multiqc_data {config.out_dir}/multiqc/multiqc_plots
 mv multiqc_report.html {config.out_dir}/multiqc/
+mv multiqc_data {config.out_dir}/multiqc/
+mv multiqc_plots {config.out_dir}/multiqc/
 """
 
 [rules.resources]
