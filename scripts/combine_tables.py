@@ -134,7 +134,18 @@ def main(args=None):
     ## BIN DEPTH PROCESSING
 
     ## handle bin depths, and extract root bin names
-    results = pd.read_csv(args.depths_summary, sep="\t")
+    try:
+        results = pd.read_csv(args.depths_summary, sep="\t")
+    except pd.errors.EmptyDataError:
+        results = pd.DataFrame()
+    # When no bins were found for any assembly/binning method, the upstream
+    # aggregators write empty placeholders (0-byte files, or a 3-byte '"\n'
+    # from pandas' empty-frame to_csv). Those parse to an empty (or
+    # bin-less) frame; treat them like the empty BUSCO/QUAST summaries and
+    # emit an empty report instead of crashing with KeyError: 'bin'.
+    if results.empty or "bin" not in results.columns:
+        pd.DataFrame(columns=["bin"]).to_csv(args.out, sep="\t", index=False)
+        return 0
     results.columns = [
         "Depth " + str(col) if col != "bin" else col for col in results.columns
     ]
@@ -297,7 +308,12 @@ def main(args=None):
             how="outer",
         )
 
-    results.sort_values("bin").to_csv(args.out, sep="\t", index=False)
+    # An all-placeholder merge (e.g. only empty QC summaries were passed)
+    # can leave "bin" all-NaN, which sort_values would reject; keep order.
+    if results["bin"].isna().all():
+        results.to_csv(args.out, sep="\t", index=False)
+    else:
+        results.sort_values("bin").to_csv(args.out, sep="\t", index=False)
 
 
 if __name__ == "__main__":
