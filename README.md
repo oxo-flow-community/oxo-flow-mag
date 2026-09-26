@@ -148,7 +148,7 @@ Override any config value on the command line with `KEY=VALUE` arguments (`oxo-f
 
 | Upstream | Port | Notes |
 |----------|------|-------|
-| Process-per-(assembler, binner) with `meta` tuples | One rule per (assembler, binner, ...) combination, names hard-coded | oxo-flow has no assembler/binner wildcard; `04_binning` has 48 rules, `05_binqc` 66, `06_taxonomy` 28, `07_refinement` 28, `08_domain` 39 (231 rules total) |
+| Process-per-(assembler, binner) with `meta` tuples | One rule per (assembler, binner, ...) combination, names hard-coded | oxo-flow has no assembler/binner wildcard; `04_binning` has 50 rules, `05_binqc` 105, `06_taxonomy` 29, `07_refinement` 28, `08_domain` 39 (251 rules total) |
 | Nextflow task workdir per process | Shared workflow dir + per-rule `.tmp/` scratch dirs | Tools that write generic-named files (spades, megahit, busco, quast, prokka, gtdbtk) run inside a scratch subdir and move outputs out |
 | bash task scripts | `sh -c` executor | Process substitution (`2> >(tee ...)` in fastp) replaced with a plain redirect; brace expansion (`short_summary.*.{txt,json}`) split into two `mv` commands |
 | Two BUSCO/GTDB-Tk/QUAST_BINS/MAG_DEPTHS runs per group (bins + chunks) | One rule per group that runs the tool twice in separate scratch subdirs | The two upstream runs share output names (`S1-auto-busco.*`); they are kept apart by the publish dirs `...-unclassified-unrefined-{sample}/` and `...-unclassified-unrefined_unbinned-{sample}/` |
@@ -156,7 +156,7 @@ Override any config value on the command line with `KEY=VALUE` arguments (`oxo-f
 | `gtdbtk_single_job` option | Not ported | Off by default upstream |
 | `gtdbtk_use_full_tree` / `gtdbtk_place_species` | Config keys not exposed | Off by default upstream |
 | Empty bin groups crash upstream (BUSCO on no input) | Empty groups produce empty/touched outputs and skip downstream classification | The pipeline never fails on empty groups |
-| nf-core boilerplate (`versions.yml`) | engine-native export: `oxo-flow report --versions-yml <file> main.oxoflow` | oxo-flow ≥ 0.17.0 exports an nf-core-style `versions.yml` derived statically from the workflow declarations: one entry per rule (365 rules) with the pinned conda environment, or a `system` entry with an explicit "no software versions declared" note where no env is declared. Deviation: it is a standalone CI-diff artifact, not a per-process runtime capture — per-rule `versions.yml` emission inside every command is deliberately not replicated (it would change every rule's command while the default plan stays byte-identical). |
+| nf-core boilerplate (`versions.yml`) | engine-native export: `oxo-flow report --versions-yml <file> main.oxoflow` | oxo-flow ≥ 0.17.0 exports an nf-core-style `versions.yml` derived statically from the workflow declarations: one entry per rule (370 rules) with the pinned conda environment, or a `system` entry with an explicit "no software versions declared" note where no env is declared. Deviation: it is a standalone CI-diff artifact, not a per-process runtime capture — per-rule `versions.yml` emission inside every command is deliberately not replicated (it would change every rule's command while the default plan stays byte-identical). |
 | nf-core boilerplate (pipeline_summary, methods_description) | Not ported | Not analysis output |
 | `*-busco.batch_summary.failed.txt` | Produced on failure | The port reproduces the upstream failure-only artifact: when BUSCO yields no `batch_summary.txt` the rule copies the empty summary to `*-busco.batch_summary.failed.txt` (upstream exits non-zero at process level; the port keeps the marker and lets consumers skip) |
 | `results/GenomeBinning/QC/BUSCO/` flat short_summaries | Published into the same per-group dir as upstream | Same publish pattern `*{.txt,.json,.log}` |
@@ -205,7 +205,7 @@ Override any config value on the command line with `KEY=VALUE` arguments (`oxo-f
 | CAT/BAT unbinned-contigs classification | `cat_db` + `cat_classify_unbinned = true` | 16 | second `CAT_pack` pass over the chunked contigs (`modules/09_catpack.oxoflow`) |
 | BIgMAG summary | `generate_bigmag_file = true` | 1 | `PREPARE_BIGMAG_SUMMARY` (`scripts/prepare_bigmag_summary.py`, pandas 1.4.3): joins `bin_summary.tsv` with the GUNC report into `GenomeBinning/BIgMAG/bigmag_summary.tsv`; upstream requires `--run_checkm2` + `--run_gunc` and no skipped BINQC/GTDB-Tk/QUAST/BUSCO — the port keeps BUSCO/QUAST/BINQC always on and the rule fails fast in-shell unless `run_checkm2`/`run_gunc`/`run_gtdbtk` are enabled |
 
-Each gate activates exactly its own branch: with the default config the executed plan (135 rules of 365 total) is identical to the pre-branch port, and toggling one key adds only that branch's rules (verified by `dry-run` per key).
+Each gate activates exactly its own branch: with the default config the executed plan (134 rules of 370 total) is identical to the pre-branch port, and toggling one key adds only that branch's rules (verified by `dry-run` per key).
 
 ### Not ported (with reasons)
 
